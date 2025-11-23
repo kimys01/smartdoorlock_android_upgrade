@@ -16,7 +16,7 @@ import androidx.navigation.ui.AppBarConfiguration
 import androidx.navigation.ui.setupActionBarWithNavController
 import androidx.navigation.ui.setupWithNavController
 import com.example.smartdoorlock.databinding.ActivityMainBinding
-import com.example.smartdoorlock.notifications.LocationService
+import com.example.smartdoorlock.service.LocationService
 import com.google.android.material.bottomnavigation.BottomNavigationView
 
 class MainActivity : AppCompatActivity() {

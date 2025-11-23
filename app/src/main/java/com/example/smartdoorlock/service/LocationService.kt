@@ -1,4 +1,4 @@
-package com.example.smartdoorlock.notifications
+package com.example.smartdoorlock.service
 
 import android.Manifest
 import android.app.*
@@ -10,24 +10,26 @@ import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
 import android.os.Build
-import android.os.Bundle
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
-import com.google.firebase.database.*
+import com.google.firebase.firestore.FirebaseFirestore
 import java.text.SimpleDateFormat
 import java.util.*
+import com.google.firebase.auth.FirebaseAuth
 
+// Firestore 사용을 위해 패키지 이름을 notifications에서 service로 변경했습니다. (일반적인 구조)
 public class LocationService : Service(), LocationListener {
 
     private lateinit var locationManager: LocationManager
+    private val db = FirebaseFirestore.getInstance() // Firestore 인스턴스
     private val CHANNEL_ID = "location_channel"
     private val NOTIFICATION_ID = 1
 
-    // --- 변경 사항 1: 위치 업데이트 주기를 5분(5 * 60 * 1000L)으로 변경 ---
-    private val MIN_TIME_MS: Long = 5 * 60 * 1000L // 5분
-    private val MIN_DISTANCE_M: Float = 10f // 10미터
+    // 위치 업데이트 주기: 5분 (5 * 60 * 1000L)
+    private val MIN_TIME_MS: Long = 5 * 60 * 1000L
+    private val MIN_DISTANCE_M: Float = 10f
 
     override fun onCreate() {
         super.onCreate()
@@ -43,6 +45,7 @@ public class LocationService : Service(), LocationListener {
             .setSmallIcon(android.R.drawable.ic_menu_mylocation)
             .build()
 
+        // 포그라운드 서비스 시작
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(
                 NOTIFICATION_ID,
@@ -55,84 +58,77 @@ public class LocationService : Service(), LocationListener {
 
         locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
 
-        if (!hasAllPermissions()) {
+        if (!hasRequiredPermissions()) {
             Log.e("LocationService", "❌ 위치 권한 부족 → 서비스 종료")
-            stopForeground(true)
             stopSelf()
             return START_NOT_STICKY
         }
 
         try {
-            // --- 변경 사항 1 (적용) ---
-            locationManager.requestLocationUpdates(
-                LocationManager.GPS_PROVIDER,
-                MIN_TIME_MS, // 5분
-                MIN_DISTANCE_M,
-                this
-            )
-            locationManager.requestLocationUpdates(
-                LocationManager.NETWORK_PROVIDER,
-                MIN_TIME_MS, // 5분
-                MIN_DISTANCE_M,
-                this
-            )
+            // [권한 체크 보완]
+            if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+                locationManager.requestLocationUpdates(
+                    LocationManager.GPS_PROVIDER,
+                    MIN_TIME_MS,
+                    MIN_DISTANCE_M,
+                    this
+                )
+                locationManager.requestLocationUpdates(
+                    LocationManager.NETWORK_PROVIDER,
+                    MIN_TIME_MS,
+                    MIN_DISTANCE_M,
+                    this
+                )
+            } else {
+                Log.e("LocationService", "❌ ACCESS_FINE_LOCATION 권한 부족으로 업데이트 요청 실패")
+                stopSelf()
+            }
         } catch (e: Exception) {
             Log.e("LocationService", "❌ 위치 요청 실패: ${e.localizedMessage}")
-            stopForeground(true)
             stopSelf()
         }
 
         return START_STICKY
     }
 
-    private fun hasAllPermissions(): Boolean {
-        val requiredPermissions = mutableListOf(
-            Manifest.permission.ACCESS_FINE_LOCATION,
-            Manifest.permission.ACCESS_COARSE_LOCATION
-        )
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            requiredPermissions.add(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
-            requiredPermissions.add(Manifest.permission.FOREGROUND_SERVICE_LOCATION)
-        }
-
-        return requiredPermissions.all {
-            ActivityCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
-        }
+    private fun hasRequiredPermissions(): Boolean {
+        // [필수 권한] ACCESS_FINE_LOCATION 하나만 체크해도 충분
+        return ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
     }
 
+    // [핵심 로직] 위치 변경 시 Firestore에 저장
     override fun onLocationChanged(location: Location) {
         Log.d("LocationService", "📍 위치 변경됨: ${location.latitude}, ${location.longitude}, 고도: ${location.altitude}")
 
-        val prefs = getSharedPreferences("login_prefs", Context.MODE_PRIVATE)
-        val userId = prefs.getString("saved_id", null)
+        // Firebase Auth에서 현재 로그인된 사용자 ID 가져오기
+        val userId = FirebaseAuth.getInstance().currentUser?.uid
 
-        if (userId == null) {
-            Log.e("LocationService", "❌ userId 없음 → 로그 저장 불가")
+        if (userId.isNullOrEmpty()) {
+            Log.e("LocationService", "❌ Firebase Auth User ID 없음 → 로그 저장 불가")
             return
         }
 
         val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
 
-        // --- 변경 사항 2: 'altitude' (고도) 추가 ---
-        val locationLog = mapOf(
+        val locationLog = hashMapOf(
             "user_id" to userId,
             "latitude" to location.latitude,
             "longitude" to location.longitude,
-            "altitude" to location.altitude, // 고도 추가
+            "altitude" to location.altitude,
             "timestamp" to timestamp
         )
 
-        // --- 변경 사항 3: 저장 경로를 'users/{userId}/location_logs'로 변경 ---
-        FirebaseDatabase.getInstance().getReference("users") // 최상위 경로 'users'로 변경
-            .child(userId)
-            .child("location_logs") // 'location_logs' 하위에 저장
-            .push()
-            .setValue(locationLog)
+        // Firestore 경로: artifacts/{appId}/users/{userId}/location_logs/{docId}
+        val logCollectionRef = db.collection("artifacts").document("default-app-id")
+            .collection("users").document(userId)
+            .collection("location_logs")
+
+        logCollectionRef.add(locationLog) // add()를 사용하여 새 문서 자동 생성
             .addOnSuccessListener {
-                Log.d("LocationService", "✅ users/${userId}/location_logs 저장 성공")
+                Log.d("LocationService", "✅ Firestore users/${userId}/location_logs 저장 성공")
             }
             .addOnFailureListener {
-                Log.e("LocationService", "❌ users/${userId}/location_logs 저장 실패: ${it.message}")
+                Log.e("LocationService", "❌ Firestore users/${userId}/location_logs 저장 실패: ${it.message}")
             }
     }
 
@@ -144,15 +140,16 @@ public class LocationService : Service(), LocationListener {
         Log.w("LocationService", "📡 위치 제공자 비활성화: $provider")
     }
 
-    @Deprecated("Deprecated in Java")
-    override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {
-        Log.d("LocationService", "📡 위치 상태 변경: $provider → $status")
-    }
+    // [수정] onStatusChanged는 Deprecated 되었으므로 onLocationChanged를 사용
+    // 이 메서드는 Android 12 이상에서 더 이상 호출되지 않습니다.
 
     override fun onDestroy() {
         super.onDestroy()
         try {
-            locationManager.removeUpdates(this)
+            // [권한 체크] 권한이 있을 때만 removeUpdates 호출
+            if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+                locationManager.removeUpdates(this)
+            }
         } catch (e: Exception) {
             Log.e("LocationService", "❌ 위치 업데이트 해제 실패: ${e.localizedMessage}")
         }

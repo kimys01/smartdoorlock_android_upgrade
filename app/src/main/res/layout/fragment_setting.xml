@@ -23,15 +23,14 @@
 
         <!-- [수정] AppCompatButton으로 변경, 그라데이션 및 텍스트 색상 적용 -->
         <androidx.appcompat.widget.AppCompatButton
-            android:id="@+id/buttonAuth"
+            android:id="@+id/deviceScanFragment"
             android:layout_width="match_parent"
             android:layout_height="100dp"
             android:layout_marginBottom="8dp"
-            android:text="인증"
+            android:text="디바이스 연결"
             android:textSize="50sp"
             android:background="@drawable/gradient_button_background"
             android:textColor="#FFFFFF"/>
-
         <!-- [수정] AppCompatButton으로 변경, 그라데이션 및 텍스트 색상 적용 -->
         <androidx.appcompat.widget.AppCompatButton
             android:id="@+id/buttonAuthMethod"

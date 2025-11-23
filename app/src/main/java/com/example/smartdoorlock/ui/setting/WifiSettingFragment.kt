@@ -1,7 +1,9 @@
 package com.example.smartdoorlock.ui.setting
 
 import android.Manifest
+import android.content.Context
 import android.content.pm.PackageManager
+import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Bundle
 import android.view.LayoutInflater
@@ -18,30 +20,20 @@ class WifiSettingFragment : Fragment() {
 
     private var _binding: FragmentWifiSettingBinding? = null
     private val binding get() = _binding!!
-
     private lateinit var viewModel: WifiSettingViewModel
+    private var targetDeviceAddress: String = ""
 
-    // TODO: 이전 화면(BLE 스캔)에서 선택한 도어락의 MAC 주소를 받아와야 합니다.
-    // 예시: private val deviceAddress: String by lazy { arguments?.getString("DEVICE_ADDRESS") ?: "" }
-    // 여기서는 테스트를 위해 임시 주소를 사용합니다. 실제로는 arguments에서 받아오세요.
-    private val TEST_DEVICE_ADDRESS = "00:11:22:33:AA:BB"
-
-    // BLE 권한 요청 런처
     private val requestBlePermissions = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
-        if (permissions.values.all { it }) {
-            // 권한이 모두 승인되면 연결 시도
-            startProvisioning()
+        if (permissions.entries.all { it.value }) {
+            viewModel.connectToDevice(targetDeviceAddress)
         } else {
-            Toast.makeText(requireContext(), "BLE 권한이 필요합니다.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(requireContext(), "권한 필요", Toast.LENGTH_SHORT).show()
         }
     }
 
-    override fun onCreateView(
-        inflater: LayoutInflater, container: ViewGroup?,
-        savedInstanceState: Bundle?
-    ): View {
+    override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         _binding = FragmentWifiSettingBinding.inflate(inflater, container, false)
         return binding.root
     }
@@ -49,45 +41,64 @@ class WifiSettingFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        // ViewModel 초기화
+        arguments?.getString("DEVICE_ADDRESS")?.let { targetDeviceAddress = it }
         viewModel = ViewModelProvider(this).get(WifiSettingViewModel::class.java)
 
-        // ViewModel의 상태(Status) 메시지를 관찰하여 UI(textViewStatus)에 반영
-        viewModel.provisioningStatus.observe(viewLifecycleOwner) { status ->
-            binding.textViewStatus.text = status
-            // 연결 버튼 활성화/비활성화 로직
-            binding.buttonConnectWifi.isEnabled = !(status.contains("중") || status.contains("완료"))
+        // 시작 시 BLE 연결 시도
+        if (targetDeviceAddress.isNotEmpty()) {
+            if (checkBlePermissions()) viewModel.connectToDevice(targetDeviceAddress)
+            else requestBlePermissions.launch(getRequiredBlePermissions())
         }
 
-        // '연결하기' 버튼 클릭 리스너
+        // --- UI 관찰 ---
+        viewModel.statusText.observe(viewLifecycleOwner) { status ->
+            binding.textViewStatus.text = status
+        }
+
+        viewModel.currentStep.observe(viewLifecycleOwner) { step ->
+            updateUiStep(step)
+            // [추가] 2단계(와이파이)로 바로 넘어오면 SSID 자동 입력
+            if (step == 2) fetchCurrentWifiSsid()
+        }
+
+        // --- 버튼 리스너 ---
+
+        // 1. 앱 로그인
+        binding.buttonLoginApp.setOnClickListener {
+            val id = binding.editTextUserId.text.toString().trim()
+            val pw = binding.editTextUserPw.text.toString().trim()
+            if (id.isNotEmpty() && pw.isNotEmpty()) viewModel.verifyAppAdmin(id, pw)
+            else Toast.makeText(context, "정보를 입력하세요", Toast.LENGTH_SHORT).show()
+        }
+
+        // 2. 와이파이 설정 (중간 PIN 인증 과정 삭제됨)
         binding.buttonConnectWifi.setOnClickListener {
-            if (checkBlePermissions()) {
-                startProvisioning()
-            } else {
-                requestBlePermissions.launch(getRequiredBlePermissions())
-            }
+            val ssid = binding.editTextSsid.text.toString()
+            val pw = binding.editTextPassword.text.toString()
+            if (ssid.isNotEmpty() && pw.isNotEmpty()) viewModel.sendWifiSettings(ssid, pw)
+            else Toast.makeText(context, "입력 필요", Toast.LENGTH_SHORT).show()
         }
     }
 
-    private fun startProvisioning() {
-        val ssid = binding.editTextSsid.text.toString()
-        val password = binding.editTextPassword.text.toString()
+    private fun fetchCurrentWifiSsid() {
+        try {
+            if (binding.editTextSsid.text.toString().isNotEmpty()) return
+            val wifiManager = requireContext().applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+            val info = wifiManager.connectionInfo
+            if (info != null && info.ssid != null && info.ssid != "<unknown ssid>") {
+                binding.editTextSsid.setText(info.ssid.replace("\"", ""))
+            }
+        } catch (e: Exception) { e.printStackTrace() }
+    }
 
-        if (ssid.isEmpty()) {
-            binding.editTextSsid.error = "SSID를 입력하세요."
-            return
+    private fun updateUiStep(step: Int) {
+        binding.layoutLoginSection.visibility = View.GONE
+        binding.layoutWifiSection.visibility = View.GONE
+
+        when (step) {
+            0 -> binding.layoutLoginSection.visibility = View.VISIBLE
+            2 -> binding.layoutWifiSection.visibility = View.VISIBLE // 바로 2단계로
         }
-
-        // TODO: 실제 deviceAddress를 viewModel로 전달해야 합니다.
-        // viewModel.startProvisioning(deviceAddress, ssid, password)
-
-        // --- 테스트용 ---
-        if (TEST_DEVICE_ADDRESS.isEmpty()) {
-            Toast.makeText(requireContext(), "도어락 주소가 없습니다.", Toast.LENGTH_SHORT).show()
-            return
-        }
-        viewModel.startProvisioning(TEST_DEVICE_ADDRESS, ssid, password)
-        // --- 테스트용 끝 ---
     }
 
     private fun checkBlePermissions(): Boolean {
@@ -98,16 +109,9 @@ class WifiSettingFragment : Fragment() {
 
     private fun getRequiredBlePermissions(): Array<String> {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            arrayOf(
-                Manifest.permission.BLUETOOTH_SCAN,
-                Manifest.permission.BLUETOOTH_CONNECT
-            )
+            arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.ACCESS_FINE_LOCATION)
         } else {
-            arrayOf(
-                Manifest.permission.BLUETOOTH,
-                Manifest.permission.BLUETOOTH_ADMIN,
-                Manifest.permission.ACCESS_FINE_LOCATION
-            )
+            arrayOf(Manifest.permission.BLUETOOTH, Manifest.permission.BLUETOOTH_ADMIN, Manifest.permission.ACCESS_FINE_LOCATION)
         }
     }
 
@@ -118,7 +122,6 @@ class WifiSettingFragment : Fragment() {
 
     override fun onStop() {
         super.onStop()
-        // 화면이 중지되면 BLE 연결을 해제하도록 ViewModel에 알림
         viewModel.disconnect()
     }
 }

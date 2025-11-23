@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="#F5F5F5">
+
+    <!-- 상단 타이틀 -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="주변 기기 검색"
+        android:textSize="24sp"
+        android:textStyle="bold"
+        android:textColor="#000000"
+        android:padding="24dp"
+        android:background="#FFFFFF"
+        android:elevation="4dp"/>
+
+    <!-- 스캔 상태 및 로딩 바 영역 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:gravity="center_horizontal"
+        android:paddingTop="16dp">
+
+        <ProgressBar
+            android:id="@+id/progressBarScanning"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:indeterminateTint="#2196F3"
+            android:visibility="invisible"/>
+
+        <TextView
+            android:id="@+id/tvScanStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="버튼을 눌러 도어락을 찾으세요."
+            android:gravity="center"
+            android:textColor="#666666"
+            android:layout_marginBottom="16dp"/>
+    </LinearLayout>
+
+    <!-- 스캔 시작 버튼 -->
+    <androidx.appcompat.widget.AppCompatButton
+        android:id="@+id/btnStartScan"
+        android:layout_width="match_parent"
+        android:layout_height="60dp"
+        android:text="주변 도어락 검색 시작"
+        android:textSize="18sp"
+        android:textStyle="bold"
+        android:textColor="#FFFFFF"
+        android:layout_marginHorizontal="16dp"
+        android:layout_marginBottom="16dp"
+        android:background="@drawable/gradient_button_background"/>
+
+    <!-- [수정됨] 하단 여백 추가 -->
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/recyclerViewDevices"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:paddingHorizontal="16dp"
+
+        android:paddingBottom="100dp"
+        android:clipToPadding="false"
+
+        android:scrollbars="vertical"/>
+    <!-- paddingBottom="100dp": 하단 바 높이만큼 여유 공간 확보 -->
+    <!-- clipToPadding="false": 스크롤할 때만 여백이 적용되도록 설정 (자연스러운 스크롤) -->
+
+</LinearLayout>

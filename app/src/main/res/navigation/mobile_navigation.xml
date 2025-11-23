@@ -45,7 +45,12 @@
         android:id="@+id/navigation_settings"
         android:name="com.example.smartdoorlock.ui.settings.SettingsFragment"
         android:label="설정"
-        tools:layout="@layout/fragment_setting" />
+        tools:layout="@layout/fragment_setting" >
+    <!-- ▼▼▼ [이 코드를 여기에 추가하세요] ▼▼▼ -->
+    <action
+        android:id="@+id/action_settings_to_scan"
+        app:destination="@id/deviceScanFragment" />
+    </fragment>
 
     <fragment
         android:id="@+id/navigation_user_update"
@@ -53,12 +58,6 @@
         android:label="사용자 정보 수정"
         tools:layout="@layout/fragment_user_update" />
 
-
-    <fragment
-        android:id="@+id/navigation_auth"
-        android:name="com.example.smartdoorlock.ui.settings.AuthFragment"
-        android:label="인증"
-        tools:layout="@layout/fragment_auth"/>
 
     <fragment
         android:id="@+id/navigation_auth_method"
@@ -79,10 +78,15 @@
         tools:layout="@layout/fragment_help"/>
 
     <fragment
-        android:id="@+id/navigation_wifi_setting"
+        android:id="@+id/wifiSettingFragment"
         android:name="com.example.smartdoorlock.ui.setting.WifiSettingFragment"
-        android:label="도움말"
+        android:label="wifi세팅"
         tools:layout="@layout/fragment_wifi_setting"/>
 
+    <fragment
+        android:id="@+id/deviceScanFragment"
+        android:name="com.example.smartdoorlock.ui.scan.DeviceScanFragment"
+        android:label="도어락 찾기"
+        tools:layout="@layout/fragment_device_scan"/>
 
 </navigation>
