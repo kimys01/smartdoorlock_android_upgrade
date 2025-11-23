@@ -3,90 +3,132 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/mobile_navigation"
-    app:startDestination="@id/navigation_login">
+    app:startDestination="@id/navigation_dashboard"> <!-- [핵심 변경] 시작점을 대시보드로 설정 -->
 
-    <!-- 🔐 로그인 화면 -->
+    <!-- 로그인 화면 -->
     <fragment
         android:id="@+id/navigation_login"
         android:name="com.example.smartdoorlock.ui.login.LoginFragment"
         android:label="로그인"
-        tools:layout="@layout/fragment_login" />
+        tools:layout="@layout/fragment_login">
+        <!-- 로그인 후 대시보드로 갈 때: 백스택을 모두 지우고 이동 -->
+        <action
+            android:id="@+id/action_login_to_dashboard"
+            app:destination="@id/navigation_dashboard"
+            app:popUpTo="@id/mobile_navigation"
+            app:popUpToInclusive="true"
+            app:enterAnim="@anim/nav_default_enter_anim"
+            app:exitAnim="@anim/nav_default_exit_anim"
+            app:popEnterAnim="@anim/nav_default_pop_enter_anim"
+            app:popExitAnim="@anim/nav_default_pop_exit_anim"/>
+    </fragment>
 
-    <!-- 회원가입창-->
-    <fragment
-        android:id="@+id/navigation_register"
-        android:name="com.example.smartdoorlock.ui.register.RegisterFragment"
-        android:label="회원가입"
-        tools:layout="@layout/fragment_register" />
-
-    <!-- 👤 프로필 -->
-    <fragment
-        android:id="@+id/navigation_profile"
-        android:name="com.example.smartdoorlock.ui.profile.ProfileFragment"
-        android:label="@string/title_profile"
-        tools:layout="@layout/fragment_profile" />
-
-    <!-- 🔓 잠금/해제 -->
+    <!-- 대시보드 (이제 여기가 홈입니다) -->
     <fragment
         android:id="@+id/navigation_dashboard"
         android:name="com.example.smartdoorlock.ui.dashboard.DashboardFragment"
         android:label="@string/title_dashboard"
-        tools:layout="@layout/fragment_dashboard" />
+        tools:layout="@layout/fragment_dashboard">
+        <!-- 대시보드 -> 스캔 -->
+        <action
+            android:id="@+id/action_dashboard_to_scan"
+            app:destination="@id/deviceScanFragment"
+            app:enterAnim="@anim/nav_default_enter_anim"
+            app:exitAnim="@anim/nav_default_exit_anim"
+            app:popEnterAnim="@anim/nav_default_pop_enter_anim"
+            app:popExitAnim="@anim/nav_default_pop_exit_anim"/>
+    </fragment>
 
-    <!-- 🧾 출입기록 -->
-    <fragment
-        android:id="@+id/navigation_notifications"
-        android:name="com.example.smartdoorlock.ui.notifications.NotificationsFragment"
-        android:label="@string/title_notifications"
-        tools:layout="@layout/fragment_notifications" />
-
-    <!-- ⚙ 설정 -->
+    <!-- 설정 (Settings) -->
     <fragment
         android:id="@+id/navigation_settings"
         android:name="com.example.smartdoorlock.ui.settings.SettingsFragment"
         android:label="설정"
-        tools:layout="@layout/fragment_setting" >
-    <!-- ▼▼▼ [이 코드를 여기에 추가하세요] ▼▼▼ -->
-    <action
-        android:id="@+id/action_settings_to_scan"
-        app:destination="@id/deviceScanFragment" />
+        tools:layout="@layout/fragment_setting">
+
+        <!-- 설정 화면의 각종 이동 액션들 -->
+        <action
+            android:id="@+id/action_settings_to_scan"
+            app:destination="@id/deviceScanFragment"
+            app:enterAnim="@anim/nav_default_enter_anim"
+            app:exitAnim="@anim/nav_default_exit_anim"
+            app:popEnterAnim="@anim/nav_default_pop_enter_anim"
+            app:popExitAnim="@anim/nav_default_pop_exit_anim"/>
+        <action android:id="@+id/action_settings_to_auth" app:destination="@id/navigation_auth_method"
+            app:enterAnim="@anim/nav_default_enter_anim" app:exitAnim="@anim/nav_default_exit_anim"
+            app:popEnterAnim="@anim/nav_default_pop_enter_anim" app:popExitAnim="@anim/nav_default_pop_exit_anim"/>
+        <action android:id="@+id/action_settings_to_detail" app:destination="@id/navigation_detail_setting"
+            app:enterAnim="@anim/nav_default_enter_anim" app:exitAnim="@anim/nav_default_exit_anim"
+            app:popEnterAnim="@anim/nav_default_pop_enter_anim" app:popExitAnim="@anim/nav_default_pop_exit_anim"/>
+        <action android:id="@+id/action_settings_to_help" app:destination="@id/navigation_help"
+            app:enterAnim="@anim/nav_default_enter_anim" app:exitAnim="@anim/nav_default_exit_anim"
+            app:popEnterAnim="@anim/nav_default_pop_enter_anim" app:popExitAnim="@anim/nav_default_pop_exit_anim"/>
+        <action android:id="@+id/action_settings_to_wifi" app:destination="@id/wifiSettingFragment"
+            app:enterAnim="@anim/nav_default_enter_anim" app:exitAnim="@anim/nav_default_exit_anim"
+            app:popEnterAnim="@anim/nav_default_pop_enter_anim" app:popExitAnim="@anim/nav_default_pop_exit_anim"/>
     </fragment>
 
+    <!-- 프로필 -->
     <fragment
-        android:id="@+id/navigation_user_update"
-        android:name="com.example.smartdoorlock.ui.profile.UserUpdateFragment"
-        android:label="사용자 정보 수정"
-        tools:layout="@layout/fragment_user_update" />
+        android:id="@+id/navigation_profile"
+        android:name="com.example.smartdoorlock.ui.profile.ProfileFragment"
+        android:label="@string/title_profile"
+        tools:layout="@layout/fragment_profile">
+        <action
+            android:id="@+id/action_profile_to_scan"
+            app:destination="@id/deviceScanFragment"
+            app:enterAnim="@anim/nav_default_enter_anim"
+            app:exitAnim="@anim/nav_default_exit_anim"
+            app:popEnterAnim="@anim/nav_default_pop_enter_anim"
+            app:popExitAnim="@anim/nav_default_pop_exit_anim"/>
+    </fragment>
 
-
+    <!-- 회원가입 -->
     <fragment
-        android:id="@+id/navigation_auth_method"
-        android:name="com.example.smartdoorlock.ui.settings.AuthMethodFragment"
-        android:label="인증방식"
-        tools:layout="@layout/fragment_auth_method"/>
+        android:id="@+id/navigation_register"
+        android:name="com.example.smartdoorlock.ui.register.RegisterFragment"
+        android:label="회원가입"
+        tools:layout="@layout/fragment_register">
+        <action
+            android:id="@+id/action_register_to_login"
+            app:destination="@id/navigation_login"
+            app:popUpTo="@id/navigation_register"
+            app:popUpToInclusive="true"
+            app:enterAnim="@anim/nav_default_pop_enter_anim"
+            app:exitAnim="@anim/nav_default_pop_exit_anim"
+            app:popEnterAnim="@anim/nav_default_enter_anim"
+            app:popExitAnim="@anim/nav_default_exit_anim"/>
+    </fragment>
 
-    <fragment
-        android:id="@+id/navigation_detail_setting"
-        android:name="com.example.smartdoorlock.ui.settings.DetailSettingFragment"
-        android:label="상세설정"
-        tools:layout="@layout/fragment_detail_setting" />
-
-    <fragment
-        android:id="@+id/navigation_help"
-        android:name="com.example.smartdoorlock.ui.settings.HelpFragment"
-        android:label="도움말"
-        tools:layout="@layout/fragment_help"/>
-
-    <fragment
-        android:id="@+id/wifiSettingFragment"
-        android:name="com.example.smartdoorlock.ui.setting.WifiSettingFragment"
-        android:label="wifi세팅"
-        tools:layout="@layout/fragment_wifi_setting"/>
-
+    <!-- 기기 스캔 화면 -->
     <fragment
         android:id="@+id/deviceScanFragment"
         android:name="com.example.smartdoorlock.ui.scan.DeviceScanFragment"
         android:label="도어락 찾기"
-        tools:layout="@layout/fragment_device_scan"/>
+        tools:layout="@layout/fragment_device_scan">
+        <action
+            android:id="@+id/action_scan_to_wifi_setting"
+            app:destination="@id/wifiSettingFragment"
+            app:popUpTo="@id/deviceScanFragment"
+            app:popUpToInclusive="true"
+            app:enterAnim="@anim/nav_default_enter_anim"
+            app:exitAnim="@anim/nav_default_exit_anim"
+            app:popEnterAnim="@anim/nav_default_pop_enter_anim"
+            app:popExitAnim="@anim/nav_default_pop_exit_anim"/>
+    </fragment>
+
+    <!-- 와이파이 설정 화면 -->
+    <fragment
+        android:id="@+id/wifiSettingFragment"
+        android:name="com.example.smartdoorlock.ui.setting.WifiSettingFragment"
+        android:label="Wi-Fi 설정"
+        tools:layout="@layout/fragment_wifi_setting" />
+
+    <!-- 기타 화면들 (유지) -->
+    <fragment android:id="@+id/navigation_notifications" android:name="com.example.smartdoorlock.ui.notifications.NotificationsFragment" android:label="@string/title_notifications" tools:layout="@layout/fragment_notifications" />
+    <fragment android:id="@+id/navigation_user_update" android:name="com.example.smartdoorlock.ui.profile.UserUpdateFragment" android:label="사용자 정보 수정" tools:layout="@layout/fragment_user_update" />
+    <fragment android:id="@+id/navigation_auth_method" android:name="com.example.smartdoorlock.ui.settings.AuthMethodFragment" android:label="인증방식" tools:layout="@layout/fragment_auth_method"/>
+    <fragment android:id="@+id/navigation_detail_setting" android:name="com.example.smartdoorlock.ui.settings.DetailSettingFragment" android:label="상세설정" tools:layout="@layout/fragment_detail_setting" />
+    <fragment android:id="@+id/navigation_help" android:name="com.example.smartdoorlock.ui.settings.HelpFragment" android:label="도움말" tools:layout="@layout/fragment_help"/>
 
 </navigation>

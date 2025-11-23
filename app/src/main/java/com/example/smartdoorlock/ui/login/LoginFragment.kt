@@ -8,7 +8,6 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
 import androidx.fragment.app.Fragment
-import androidx.navigation.NavOptions
 import androidx.navigation.fragment.findNavController
 import com.example.smartdoorlock.R
 import com.example.smartdoorlock.databinding.FragmentLoginBinding
@@ -41,15 +40,14 @@ class LoginFragment : Fragment() {
         binding.checkboxSaveId.isChecked = !savedId.isNullOrEmpty()
         binding.checkboxAutoLogin.isChecked = autoLogin
 
-        // 자동 로그인 (이미 로그인된 상태라면 패스)
-        if (autoLogin && auth.currentUser != null) {
+        // 이미 로그인된 경우 대시보드로 이동
+        if (auth.currentUser != null) {
             navigateToDashboard()
             return
         }
 
-        // [로그인 버튼 클릭]
         binding.buttonLogin.setOnClickListener {
-            val inputId = binding.editTextId.text.toString().trim() // 사용자가 입력한 일반 아이디
+            val inputId = binding.editTextId.text.toString().trim()
             val password = binding.editTextPassword.text.toString().trim()
 
             if (inputId.isEmpty() || password.isEmpty()) {
@@ -57,17 +55,14 @@ class LoginFragment : Fragment() {
                 return@setOnClickListener
             }
 
-            // [핵심 수정] 일반 아이디 뒤에 가짜 도메인을 붙여서 이메일 형식으로 만듭니다.
-            // 예: 사용자가 "admin" 입력 -> "admin@doorlock.com"으로 로그인 시도
             val emailForAuth = "$inputId@doorlock.com"
 
             auth.signInWithEmailAndPassword(emailForAuth, password)
                 .addOnCompleteListener { task ->
                     if (task.isSuccessful) {
-                        // 로그인 성공 시 저장 로직
                         val editor = prefs.edit()
                         if (binding.checkboxSaveId.isChecked) {
-                            editor.putString("saved_id", inputId) // 원래 아이디 저장
+                            editor.putString("saved_id", inputId)
                         } else {
                             editor.remove("saved_id")
                         }
@@ -75,6 +70,8 @@ class LoginFragment : Fragment() {
                         editor.apply()
 
                         Toast.makeText(context, "로그인 성공", Toast.LENGTH_SHORT).show()
+
+                        // 로그인 성공 시 이동
                         navigateToDashboard()
                     } else {
                         Toast.makeText(context, "로그인 실패: 아이디나 비밀번호를 확인하세요.", Toast.LENGTH_SHORT).show()
@@ -88,11 +85,19 @@ class LoginFragment : Fragment() {
         }
     }
 
+    // [핵심 수정] 내비게이션 그래프에 정의된 액션(Action)을 사용하여 이동
     private fun navigateToDashboard() {
-        val navOptions = NavOptions.Builder()
-            .setPopUpTo(R.id.navigation_login, true)
-            .build()
-        findNavController().navigate(R.id.navigation_dashboard, null, navOptions)
+        try {
+            // mobile_navigation.xml에 정의된 action_login_to_dashboard 액션을 실행합니다.
+            // 이 액션에는 app:popUpTo="@id/mobile_navigation" app:popUpToInclusive="true"가
+            // 설정되어 있어 이전 화면 기록을 모두 지우고 대시보드로 이동합니다.
+            findNavController().navigate(R.id.action_login_to_dashboard)
+        } catch (e: Exception) {
+            // 만약 액션을 찾지 못할 경우를 대비한 예외 처리 (보통 XML 설정이 잘 되어있으면 발생하지 않음)
+            Log.e("NavError", "네비게이션 이동 실패", e)
+            // 비상 시 직접 이동 (스택 정리는 덜 될 수 있음)
+            findNavController().navigate(R.id.navigation_dashboard)
+        }
     }
 
     override fun onDestroyView() {
