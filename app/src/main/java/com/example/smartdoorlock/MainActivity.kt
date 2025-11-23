@@ -60,7 +60,14 @@ class MainActivity : AppCompatActivity() {
                 R.id.navigation_profile,
                 R.id.navigation_dashboard,
                 R.id.navigation_notifications,
-                R.id.navigation_settings
+                R.id.navigation_settings,
+                R.id.navigation_login,
+                R.id.deviceScanFragment,   // '디바이스 연결' 화면 ID
+                R.id.navigation_auth_method,      // '인증방식' 화면 ID
+                R.id.navigation_detail_setting,   // '상세설정' 화면 ID
+                R.id.wifiSettingFragment,             // 'WI-FI 설정' 화면 ID
+                R.id.navigation_help              // '도움말' 화면 ID
+
             )
         )
         setupActionBarWithNavController(navController, appBarConfiguration)
