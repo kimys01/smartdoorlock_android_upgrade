@@ -82,7 +82,7 @@ class RegisterFragment : Fragment() {
             )
         )
 
-        val newUser = UserData(
+        val newUser = User(
             username = username,
             password = password,
             name = name,

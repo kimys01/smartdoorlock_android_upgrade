@@ -28,6 +28,7 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:orientation="vertical"
+            android:padding="12dp"
             android:background="@drawable/gradient_button_background">
 
             <TextView
@@ -35,20 +36,24 @@
                 android:layout_height="wrap_content"
                 android:text="자동 잠금"
                 android:textSize="18sp"
-                android:textColor="#333333" />
+                android:textStyle="bold"
+                android:textColor="#FFFFFF" />
+            <!-- 배경이 그라데이션이면 글씨는 흰색이 잘 보입니다 -->
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="문이 닫히면 5초 후 자동으로 잠급니다."
                 android:textSize="12sp"
-                android:textColor="#888888"/>
+                android:textColor="#EEEEEE"/>
         </LinearLayout>
 
-        <com.google.android.material.materialswitch.MaterialSwitch
+        <!-- [수정 핵심] MaterialSwitch 대신 호환성 좋은 SwitchCompat 사용 -->
+        <androidx.appcompat.widget.SwitchCompat
             android:id="@+id/switchAutoLock"
             android:layout_width="wrap_content"
-            android:layout_height="wrap_content"/>
+            android:layout_height="wrap_content"
+            android:layout_marginStart="16dp"/>
     </LinearLayout>
 
     <View
@@ -69,6 +74,7 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:orientation="vertical"
+            android:padding="12dp"
             android:background="@drawable/gradient_button_background">
 
             <TextView
@@ -76,22 +82,23 @@
                 android:layout_height="wrap_content"
                 android:text="잠금 알림"
                 android:textSize="18sp"
-                android:textColor="#333333"/>
+                android:textStyle="bold"
+                android:textColor="#FFFFFF"/>
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="도어락이 잠길 때 알림을 받습니다."
                 android:textSize="12sp"
-                android:textColor="#888888"/>
+                android:textColor="#EEEEEE"/>
         </LinearLayout>
 
-        <com.google.android.material.materialswitch.MaterialSwitch
+        <!-- [수정 핵심] MaterialSwitch 대신 호환성 좋은 SwitchCompat 사용 -->
+        <androidx.appcompat.widget.SwitchCompat
             android:id="@+id/switchNotifyOnLock"
             android:layout_width="wrap_content"
-            android:layout_height="wrap_content"/>
+            android:layout_height="wrap_content"
+            android:layout_marginStart="16dp"/>
     </LinearLayout>
-
-    <!-- 저장 버튼은 삭제됨 (실시간 저장) -->
 
 </LinearLayout>
