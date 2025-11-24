@@ -5,27 +5,24 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.Toast
 import androidx.fragment.app.Fragment
 import androidx.recyclerview.widget.LinearLayoutManager
-import com.example.smartdoorlock.data.DoorLockLog
+import com.example.smartdoorlock.data.DoorlockLog
 import com.example.smartdoorlock.databinding.FragmentNotificationsBinding
 import com.google.firebase.database.*
+import java.util.*
+import kotlin.collections.ArrayList
 
 class NotificationsFragment : Fragment() {
 
     private var _binding: FragmentNotificationsBinding? = null
     private val binding get() = _binding!!
+    private val database = FirebaseDatabase.getInstance()
 
-    private lateinit var database: DatabaseReference
-    private lateinit var adapter: DoorLogAdapter
-    private val logList = mutableListOf<DoorLockLog>()
+    private lateinit var adapter: NotificationAdapter
+    private val logList = ArrayList<DoorlockLog>()
 
-    override fun onCreateView(
-        inflater: LayoutInflater,
-        container: ViewGroup?,
-        savedInstanceState: Bundle?
-    ): View {
+    override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         _binding = FragmentNotificationsBinding.inflate(inflater, container, false)
         return binding.root
     }
@@ -33,46 +30,40 @@ class NotificationsFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        val prefs = requireContext().getSharedPreferences("login_prefs", Context.MODE_PRIVATE)
-        val userId = prefs.getString("saved_id", null)
-
-        if (userId == null) {
-            Toast.makeText(context, "사용자 ID를 찾을 수 없습니다", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        adapter = DoorLogAdapter(logList)
-        binding.recyclerViewLogs.layoutManager = LinearLayoutManager(requireContext())
-        binding.recyclerViewLogs.adapter = adapter
-
-        database = FirebaseDatabase.getInstance().getReference("doorlock_logs").child(userId)
+        adapter = NotificationAdapter(logList)
+        binding.recyclerViewNotifications.layoutManager = LinearLayoutManager(context)
+        binding.recyclerViewNotifications.adapter = adapter
 
         loadLogs()
     }
 
     private fun loadLogs() {
-        binding.textViewEmpty.visibility = View.GONE
-        database.addListenerForSingleValueEvent(object : ValueEventListener {
+        val prefs = requireActivity().getSharedPreferences("login_prefs", Context.MODE_PRIVATE)
+        val userId = prefs.getString("saved_id", null)
+        if (userId == null) return
+
+        // 개인 로그 경로 조회
+        val logsRef = database.getReference("users").child(userId).child("doorlock").child("logs")
+
+        logsRef.addValueEventListener(object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
                 logList.clear()
-                for (child in snapshot.children) {
-                    val log = child.getValue(DoorLockLog::class.java)
-                    log?.let { logList.add(it) }
+                for (data in snapshot.children) {
+                    val log = data.getValue(DoorlockLog::class.java)
+                    if (log != null) logList.add(log)
                 }
+                logList.reverse() // 최신순
+                adapter.notifyDataSetChanged()
 
                 if (logList.isEmpty()) {
-                    binding.textViewEmpty.visibility = View.VISIBLE
+                    binding.txtNoData.visibility = View.VISIBLE
+                    binding.recyclerViewNotifications.visibility = View.GONE
+                } else {
+                    binding.txtNoData.visibility = View.GONE
+                    binding.recyclerViewNotifications.visibility = View.VISIBLE
                 }
-
-                // 최신 로그가 위로 오도록 정렬
-                logList.sortByDescending { it.timestamp }
-
-                adapter.notifyDataSetChanged()
             }
-
-            override fun onCancelled(error: DatabaseError) {
-                Toast.makeText(context, "데이터 로드 실패: ${error.message}", Toast.LENGTH_SHORT).show()
-            }
+            override fun onCancelled(error: DatabaseError) {}
         })
     }
 

@@ -7,7 +7,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
 import androidx.fragment.app.Fragment
-import com.example.smartdoorlock.data.AppLogItem
+import com.example.smartdoorlock.data.AppLogItem // 단순화된 모델
 import com.example.smartdoorlock.databinding.FragmentDetailSettingBinding
 import com.google.firebase.database.FirebaseDatabase
 import java.text.SimpleDateFormat
@@ -57,13 +57,13 @@ class DetailSettingFragment : Fragment() {
             val timestamp = getTime()
             val statusText = if (isChecked) "ON" else "OFF"
 
-            // [핵심] 로그 리스트 추가
+            // [수정] 로그 생성
             val logMsg = "상세설정 변경(자동잠금): $statusText"
             val logItem = AppLogItem(message = logMsg, timestamp = timestamp)
 
             userRef.child("detailSettings/autoLockEnabled").setValue(isChecked)
             userRef.child("detailSettings/autoLockTime").setValue(if (isChecked) 5 else 0)
-            userRef.child("app_logs").push().setValue(logItem)
+            userRef.child("app_logs").push().setValue(logItem) // push() 사용
         }
 
         // 잠금 알림
@@ -75,7 +75,7 @@ class DetailSettingFragment : Fragment() {
             val logItem = AppLogItem(message = logMsg, timestamp = timestamp)
 
             userRef.child("detailSettings/notifyOnLock").setValue(isChecked)
-            userRef.child("app_logs").push().setValue(logItem)
+            userRef.child("app_logs").push().setValue(logItem) // push() 사용
         }
     }
 

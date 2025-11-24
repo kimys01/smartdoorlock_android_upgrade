@@ -12,7 +12,7 @@ data class User(
     val name: String = "",
     val authMethod: String = "BLE",
 
-    // [도어락 상태 및 로그]
+    // [도어락 상태 및 로그] (개인용 로그 저장소)
     val doorlock: UserDoorlock = UserDoorlock(),
 
     // [위치 로그 리스트]
@@ -58,6 +58,7 @@ data class DetailSettings(
 
 data class UserDoorlock(
     val status: DoorlockStatus = DoorlockStatus(),
+    // users/{id}/doorlock/logs 경로에 저장될 데이터
     val logs: HashMap<String, DoorlockLog> = HashMap()
 )
 
@@ -69,20 +70,8 @@ data class DoorlockStatus(
 )
 
 data class DoorlockLog(
-    val method: String = "",
-    val state: String = "",
-    val time: String = ""
+    val method: String = "", // 예: APP, UWB_AUTO
+    val state: String = "",  // 예: UNLOCK, LOCK
+    val time: String = "",
+    val user: String = ""    // [추가] 누가 열었는지 기록
 )
-
-// (하위 호환성을 위해 남겨둠, 신규 로직에서는 AppLogItem 사용)
-data class AppLogs(val change: ChangeLogs = ChangeLogs())
-data class ChangeLogs(
-    val auth: AuthLog? = null,
-    val name: NameLog? = null,
-    val password: PasswordLog? = null,
-    val detail: DetailLog? = null
-)
-data class AuthLog(val new_auth: String = "", val timestamp: String = "")
-data class NameLog(val new_name: String = "", val timestamp: String = "")
-data class PasswordLog(val new_pw: String = "", val timestamp: String = "")
-data class DetailLog(val new_detail: String = "", val timestamp: String = "")

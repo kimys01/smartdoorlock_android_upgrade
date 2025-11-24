@@ -38,21 +38,15 @@ class RegisterFragment : Fragment() {
             val pw = binding.editTextPassword.text.toString().trim()
             val name = binding.editTextName.text.toString().trim()
 
-            if (id.isEmpty() || pw.isEmpty() || name.isEmpty()) {
-                Toast.makeText(context, "모든 정보를 입력하세요.", Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
-            }
-            if (pw.length < 6) {
-                Toast.makeText(context, "비밀번호는 6자리 이상이어야 합니다.", Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
-            }
+            if (id.isEmpty() || pw.isEmpty() || name.isEmpty()) return@setOnClickListener
+            if (pw.length < 6) return@setOnClickListener
+
             registerUser(id, pw, name)
         }
     }
 
     private fun registerUser(username: String, password: String, name: String) {
         binding.buttonRegister.isEnabled = false
-        // 일반 아이디를 이메일 형식으로 변환
         val fakeEmail = if(username.contains("@")) username else "$username@doorlock.com"
 
         auth.createUserWithEmailAndPassword(fakeEmail, password)
@@ -61,10 +55,8 @@ class RegisterFragment : Fragment() {
                 val uid = user?.uid
 
                 if (uid != null) {
-                    // 프로필 업데이트
                     val profileUpdates = UserProfileChangeRequest.Builder().setDisplayName(name).build()
                     user.updateProfile(profileUpdates).addOnCompleteListener {
-                        // DB 초기 데이터 생성
                         saveFullUserStructure(username, password, name)
                     }
                 }
@@ -78,31 +70,27 @@ class RegisterFragment : Fragment() {
     private fun saveFullUserStructure(username: String, password: String, name: String) {
         val currentTime = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
 
-        // 1. 초기 로그 생성 (리스트 형태를 위해 HashMap 사용)
+        // [수정] 초기 로그 생성 (change 없이 바로 리스트에 추가)
         val initialLogs = HashMap<String, AppLogItem>()
         val logKey = database.reference.push().key ?: "init_log"
         initialLogs[logKey] = AppLogItem("계정 생성: Initial Set", currentTime)
 
-        // 2. 도어락 초기 상태
         val initialDoorlock = UserDoorlock(
             status = DoorlockStatus(true, "INIT", currentTime, "LOCK")
         )
 
-        // 3. 전체 유저 모델 생성
         val newUser = User(
             username = username,
             password = password,
             name = name,
             authMethod = "BLE",
             detailSettings = DetailSettings(true, 5, true),
-            app_logs = initialLogs,
+            app_logs = initialLogs, // 단순화된 로그 구조 적용
             doorlock = initialDoorlock,
-            // uwb_logs, location_logs는 빈 HashMap으로 시작
             uwb_logs = HashMap(),
             location_logs = HashMap()
         )
 
-        // 4. DB 저장 (username을 키로 사용)
         database.getReference("users").child(username).setValue(newUser)
             .addOnSuccessListener {
                 Toast.makeText(context, "회원가입 완료!", Toast.LENGTH_SHORT).show()

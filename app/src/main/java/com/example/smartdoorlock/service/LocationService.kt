@@ -14,6 +14,7 @@ import android.os.IBinder
 import android.util.Log
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
+import com.example.smartdoorlock.data.DoorlockLog
 import com.example.smartdoorlock.data.LocationLog
 import com.example.smartdoorlock.data.UwbLog
 import com.example.smartdoorlock.utils.LocationUtils
@@ -34,7 +35,7 @@ class LocationService : Service(), LocationListener {
     private val NOTIFICATION_ID = 1
 
     private val UPDATE_INTERVAL_MS: Long = 10 * 1000L
-    private val SAVE_INTERVAL_MS: Long = 3 * 60 * 1000L // 3분
+    private val SAVE_INTERVAL_MS: Long = 3 * 60 * 1000L
     private var lastSavedTime: Long = 0
 
     private var targetMac: String? = null
@@ -67,17 +68,10 @@ class LocationService : Service(), LocationListener {
         val username = prefs.getString("saved_id", null) ?: return
 
         val timestamp = SimpleDateFormat("yyyy.MM.dd H:mm:ss", Locale.getDefault()).format(Date())
-
-        val log = UwbLog(
-            front_distance = front,
-            back_distance = back,
-            timestamp = timestamp
-        )
-
+        val log = UwbLog(front_distance = front, back_distance = back, timestamp = timestamp)
         val uwbLogsRef = database.getReference("users").child(username).child("uwb_logs")
 
         uwbLogsRef.push().setValue(log).addOnSuccessListener {
-            // 100개 유지 로직
             uwbLogsRef.addListenerForSingleValueEvent(object : ValueEventListener {
                 override fun onDataChange(snapshot: DataSnapshot) {
                     val count = snapshot.childrenCount
@@ -88,11 +82,8 @@ class LocationService : Service(), LocationListener {
                             if (removed < toRemoveCount) {
                                 child.ref.removeValue()
                                 removed++
-                            } else {
-                                break
-                            }
+                            } else break
                         }
-                        Log.d("LocationService", "🧹 UWB 로그 정리 완료: ${removed}개 삭제됨")
                     }
                 }
                 override fun onCancelled(error: DatabaseError) {}
@@ -131,7 +122,6 @@ class LocationService : Service(), LocationListener {
 
     override fun onLocationChanged(location: Location) {
         val currentTime = System.currentTimeMillis()
-        // 3분마다 GPS 저장
         if (currentTime - lastSavedTime >= SAVE_INTERVAL_MS) {
             saveLocationToDB(location)
             lastSavedTime = currentTime
@@ -152,14 +142,37 @@ class LocationService : Service(), LocationListener {
         }
     }
 
+    // [핵심 수정] 문 열기 로직에 개인 로그 저장 추가
     private fun unlockDoor() {
         if (targetMac == null) return
-        val statusRef = database.getReference("doorlocks").child(targetMac!!).child("status")
-        val logsRef = database.getReference("doorlocks").child(targetMac!!).child("logs")
-        val currentTime = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
 
-        statusRef.updateChildren(mapOf("state" to "UNLOCK", "last_method" to "UWB_AUTO", "last_time" to currentTime, "door_closed" to false))
-        logsRef.push().setValue(mapOf("method" to "UWB_AUTO", "state" to "UNLOCK", "time" to currentTime))
+        val prefs = getSharedPreferences("login_prefs", Context.MODE_PRIVATE)
+        val userId = prefs.getString("saved_id", "AutoSystem") ?: "AutoSystem"
+
+        val statusRef = database.getReference("doorlocks").child(targetMac!!).child("status")
+        val sharedLogsRef = database.getReference("doorlocks").child(targetMac!!).child("logs")
+        val userLogsRef = database.getReference("users").child(userId).child("doorlock").child("logs")
+
+        val currentTime = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
+        val method = "UWB_AUTO"
+        val newState = "UNLOCK"
+
+        statusRef.updateChildren(mapOf(
+            "state" to newState,
+            "last_method" to method,
+            "last_time" to currentTime,
+            "door_closed" to false
+        ))
+
+        val logData = DoorlockLog(
+            method = method,
+            state = newState,
+            time = currentTime,
+            user = userId
+        )
+
+        sharedLogsRef.push().setValue(logData)
+        userLogsRef.push().setValue(logData)
     }
 
     private fun loadDoorlockInfo() {

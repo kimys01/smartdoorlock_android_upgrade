@@ -7,7 +7,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
 import androidx.fragment.app.Fragment
-import com.example.smartdoorlock.data.AppLogItem
+import com.example.smartdoorlock.data.AppLogItem // 단순화된 모델 사용
 import com.example.smartdoorlock.databinding.FragmentUserUpdateBinding
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.UserProfileChangeRequest
@@ -44,12 +44,13 @@ class UserUpdateFragment : Fragment() {
                 if (newName == currentName) return@addOnSuccessListener
 
                 val timestamp = getTime()
-                // [핵심] 리스트 형태로 로그 추가 (push 사용)
-                val logMsg = "이름 변경: $currentName->$newName"
+                // [수정] 로그 생성 (통일된 양식)
+                val logMsg = "이름 변경: $currentName -> $newName"
                 val logItem = AppLogItem(message = logMsg, timestamp = timestamp)
 
+                // DB 업데이트 (이름은 덮어쓰고, 로그는 추가)
                 userRef.child("name").setValue(newName)
-                userRef.child("app_logs").push().setValue(logItem)
+                userRef.child("app_logs").push().setValue(logItem) // push() 사용
 
                 val profileUpdates = UserProfileChangeRequest.Builder().setDisplayName(newName).build()
                 auth.currentUser?.updateProfile(profileUpdates)?.addOnCompleteListener {
@@ -71,11 +72,12 @@ class UserUpdateFragment : Fragment() {
                 val dbPw = snapshot.getValue(String::class.java) ?: ""
                 if (dbPw == currentPw) {
                     val timestamp = getTime()
-                    val logMsg = "비밀번호 변경: $dbPw->$newPw"
+                    // [수정] 로그 생성
+                    val logMsg = "비밀번호 변경: $dbPw -> $newPw"
                     val logItem = AppLogItem(message = logMsg, timestamp = timestamp)
 
                     userRef.child("password").setValue(newPw)
-                    userRef.child("app_logs").push().setValue(logItem)
+                    userRef.child("app_logs").push().setValue(logItem) // push() 사용
 
                     auth.currentUser?.updatePassword(newPw)?.addOnSuccessListener {
                         Toast.makeText(context, "비밀번호 변경 완료", Toast.LENGTH_SHORT).show()
