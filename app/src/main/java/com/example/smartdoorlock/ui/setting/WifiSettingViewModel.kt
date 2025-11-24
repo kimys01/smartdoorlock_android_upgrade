@@ -10,6 +10,8 @@ import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import com.example.smartdoorlock.data.DetailSettings
 import com.example.smartdoorlock.data.Doorlock
+import com.example.smartdoorlock.data.FixedLocation // [추가]
+import com.google.android.gms.location.LocationServices // [추가] 위치 서비스
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.database.FirebaseDatabase
 import java.text.SimpleDateFormat
@@ -28,6 +30,11 @@ class WifiSettingViewModel(application: Application) : AndroidViewModel(applicat
     private val db = FirebaseDatabase.getInstance()
     private val auth = FirebaseAuth.getInstance()
 
+    // [핵심] 핸드폰의 현재 위치를 가져오기 위한 도구
+    private val fusedLocationClient by lazy {
+        LocationServices.getFusedLocationProviderClient(getApplication<Application>())
+    }
+
     private val _statusText = MutableLiveData<String>("기기 연결 대기 중...")
     val statusText: LiveData<String> = _statusText
 
@@ -44,7 +51,6 @@ class WifiSettingViewModel(application: Application) : AndroidViewModel(applicat
     private var bluetoothGatt: BluetoothGatt? = null
     private var targetAddress: String = ""
 
-    // 저장된 사용자 ID 가져오기
     private fun getSavedUserId(): String? {
         val prefs = getApplication<Application>().getSharedPreferences("login_prefs", Context.MODE_PRIVATE)
         return prefs.getString("saved_id", null)
@@ -56,7 +62,6 @@ class WifiSettingViewModel(application: Application) : AndroidViewModel(applicat
         connectGatt(address)
     }
 
-    // 관리자 로그인 (DB 대조)
     fun verifyAppAdmin(inputId: String, inputPw: String) {
         val trimId = inputId.trim()
         val trimPw = inputPw.trim()
@@ -67,7 +72,6 @@ class WifiSettingViewModel(application: Application) : AndroidViewModel(applicat
             return
         }
 
-        // Auth UID 대신 저장된 ID 사용
         val userId = getSavedUserId()
         if (userId == null) {
             _statusText.value = "오류: 앱 로그인 정보 없음. 다시 로그인하세요."
@@ -76,7 +80,6 @@ class WifiSettingViewModel(application: Application) : AndroidViewModel(applicat
 
         _statusText.value = "서버 정보 확인 중..."
 
-        // users/{userId} 경로 조회
         db.getReference("users").child(userId).get()
             .addOnSuccessListener { snapshot ->
                 if (snapshot.exists()) {
@@ -98,14 +101,13 @@ class WifiSettingViewModel(application: Application) : AndroidViewModel(applicat
             }
     }
 
-    // 3. 와이파이 정보 전송 및 [공유 도어락 저장]
     fun sendWifiSettings(ssid: String, pass: String) {
         if (_isBleConnected.value != true) {
             _statusText.value = "오류: 도어락 연결 끊김. 다시 연결해주세요."
             return
         }
 
-        // [핵심 변경] 개인 DB가 아닌 공용 DB에 저장 및 연결
+        // [핵심 로직] 핸드폰 위치를 가져와서 도어락 정보와 함께 저장
         registerSharedDoorlock(targetAddress, ssid, pass)
 
         val payload = "ssid:$ssid,password:$pass"
@@ -119,59 +121,75 @@ class WifiSettingViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    // --- [신규] 공용 도어락 등록 및 사용자 연결 로직 ---
+    // --- 도어락 등록 및 위치 고정 로직 ---
+    @SuppressLint("MissingPermission") // 위치 권한은 Fragment 진입 시 이미 체크됨
     private fun registerSharedDoorlock(mac: String, ssid: String, pass: String) {
-        val userId = getSavedUserId() ?: return // 현재 로그인한 사용자 ID (예: user1)
+        val userId = getSavedUserId() ?: return
         val currentTime = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
 
         val doorlocksRef = db.getReference("doorlocks").child(mac)
         val userDoorlocksRef = db.getReference("users").child(userId).child("my_doorlocks")
 
-        // 1. 도어락이 이미 등록되어 있는지 확인
-        doorlocksRef.get().addOnSuccessListener { snapshot ->
-            if (snapshot.exists()) {
-                // A. 이미 등록된 도어락인 경우 -> 나(User)를 멤버로 추가 (공유)
-                Log.d("DB_SHARE", "이미 등록된 도어락입니다. 멤버로 참여합니다.")
+        // 1. 핸드폰의 현재 GPS 위치 가져오기 (도어락 위치로 고정)
+        fusedLocationClient.lastLocation.addOnCompleteListener { task ->
+            var fixedLocation = FixedLocation() // 기본값 (0,0,0)
 
-                // 도어락의 멤버 리스트에 나 추가
-                doorlocksRef.child("members").child(userId).setValue("member")
-
-                // 내 목록에 도어락 추가
-                userDoorlocksRef.child(mac).setValue(true)
-
-                // 와이파이 정보 업데이트 (선택 사항: 이미 연결된 경우 생략 가능하나 여기선 갱신)
-                doorlocksRef.child("ssid").setValue(ssid)
-                doorlocksRef.child("pw").setValue(pass)
-                doorlocksRef.child("lastUpdated").setValue(currentTime)
-
-            } else {
-                // B. 처음 등록하는 도어락인 경우 -> 새로 생성 및 관리자 권한 부여
-                Log.d("DB_SHARE", "새로운 도어락을 등록합니다.")
-
-                val members = HashMap<String, String>()
-                members[userId] = "admin" // 최초 등록자는 관리자
-
-                val newLock = Doorlock(
-                    mac = mac,
-                    ssid = ssid,
-                    pw = pass,
-                    detailSettings = DetailSettings(true, 5, true), // 초기 설정
-                    members = members,
-                    lastUpdated = currentTime
+            if (task.isSuccessful && task.result != null) {
+                val loc = task.result
+                // 핸드폰의 위치를 도어락 위치로 설정
+                fixedLocation = FixedLocation(
+                    latitude = loc.latitude,
+                    longitude = loc.longitude,
+                    altitude = loc.altitude
                 )
-
-                // 공용 폴더에 저장
-                doorlocksRef.setValue(newLock)
-
-                // 내 목록에 추가
-                userDoorlocksRef.child(mac).setValue(true)
+                Log.d("DB_SHARE", "📍 도어락 위치 고정: ${loc.latitude}, ${loc.longitude}, 고도:${loc.altitude}")
+            } else {
+                Log.w("DB_SHARE", "⚠️ 위치를 가져올 수 없음. (기본값 0.0으로 저장됩니다)")
             }
-        }.addOnFailureListener {
-            Log.e("DB_SHARE", "DB 접근 실패", it)
+
+            // 2. DB 업데이트
+            doorlocksRef.get().addOnSuccessListener { snapshot ->
+                if (snapshot.exists()) {
+                    // A. 이미 등록된 도어락 -> 멤버 추가
+                    Log.d("DB_SHARE", "기존 도어락 갱신")
+                    doorlocksRef.child("members").child(userId).setValue("member")
+                    userDoorlocksRef.child(mac).setValue(true)
+
+                    // 와이파이 정보 갱신
+                    doorlocksRef.child("ssid").setValue(ssid)
+                    doorlocksRef.child("pw").setValue(pass)
+                    doorlocksRef.child("lastUpdated").setValue(currentTime)
+
+                    // [선택] 기존에 위치 정보가 없었다면 이번 기회에 저장
+                    if (!snapshot.hasChild("location")) {
+                        doorlocksRef.child("location").setValue(fixedLocation)
+                    }
+
+                } else {
+                    // B. 신규 등록 -> 관리자로 등록하고 위치 고정
+                    Log.d("DB_SHARE", "신규 도어락 생성 (위치 포함)")
+
+                    val members = HashMap<String, String>()
+                    members[userId] = "admin"
+
+                    val newLock = Doorlock(
+                        mac = mac,
+                        ssid = ssid,
+                        pw = pass,
+                        detailSettings = DetailSettings(true, 5, true),
+                        members = members,
+                        location = fixedLocation, // [저장] 여기가 도어락의 고정 위치가 됩니다.
+                        lastUpdated = currentTime
+                    )
+
+                    doorlocksRef.setValue(newLock)
+                    userDoorlocksRef.child(mac).setValue(true)
+                }
+            }
         }
     }
 
-    // --- BLE 내부 로직 ---
+    // --- BLE 내부 로직 (이하는 기존과 동일) ---
 
     private fun connectGatt(address: String) {
         try {

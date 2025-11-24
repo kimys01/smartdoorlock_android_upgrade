@@ -11,6 +11,7 @@ import com.example.smartdoorlock.data.NameLog
 import com.example.smartdoorlock.data.PasswordLog
 import com.example.smartdoorlock.databinding.FragmentUserUpdateBinding
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.UserProfileChangeRequest // [필수]
 import com.google.firebase.database.FirebaseDatabase
 import java.text.SimpleDateFormat
 import java.util.*
@@ -31,7 +32,6 @@ class UserUpdateFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        // [핵심 변경] Auth UID 대신 로컬에 저장된 사용자 아이디(saved_id) 사용
         val prefs = requireActivity().getSharedPreferences("login_prefs", Context.MODE_PRIVATE)
         val userId = prefs.getString("saved_id", null)
 
@@ -40,9 +40,9 @@ class UserUpdateFragment : Fragment() {
             return
         }
 
-        // users/{userId} 경로 참조
         val userRef = database.getReference("users").child(userId)
 
+        // [이름 변경]
         binding.buttonUpdateName.setOnClickListener {
             val newName = binding.editTextNewName.text.toString().trim()
             if (newName.isEmpty()) {
@@ -60,27 +60,30 @@ class UserUpdateFragment : Fragment() {
                 val log = NameLog(new_name = "$currentName->$newName", timestamp = timestamp)
                 updates["app_logs/change/name"] = log
 
+                // 1. DB 업데이트
                 userRef.updateChildren(updates)
                     .addOnSuccessListener {
-                        prefs.edit().putString("user_name", newName).apply()
-                        Toast.makeText(context, "이름 변경 완료", Toast.LENGTH_SHORT).show()
-                        binding.editTextNewName.text.clear()
+                        // 2. [핵심 수정] Firebase Auth 프로필 이름 업데이트
+                        val profileUpdates = UserProfileChangeRequest.Builder()
+                            .setDisplayName(newName)
+                            .build()
+
+                        auth.currentUser?.updateProfile(profileUpdates)?.addOnCompleteListener {
+                            prefs.edit().putString("user_name", newName).apply()
+                            Toast.makeText(context, "이름 변경 완료 (웹 동기화됨)", Toast.LENGTH_SHORT).show()
+                            binding.editTextNewName.text.clear()
+                        }
                     }
             }
         }
 
+        // [비밀번호 변경] (기존 로직 유지)
         binding.buttonUpdatePassword.setOnClickListener {
             val currentInputPw = binding.editTextCurrentPassword.text.toString().trim()
             val newPw = binding.editTextNewPassword.text.toString().trim()
 
-            if (currentInputPw.isEmpty() || newPw.isEmpty()) {
-                Toast.makeText(context, "모든 필드를 입력하세요", Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
-            }
-            if (newPw.length < 6) {
-                Toast.makeText(context, "6자리 이상 입력하세요", Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
-            }
+            if (currentInputPw.isEmpty() || newPw.isEmpty()) return@setOnClickListener
+            if (newPw.length < 6) return@setOnClickListener
 
             userRef.child("password").get().addOnSuccessListener { snapshot ->
                 val dbPassword = snapshot.getValue(String::class.java) ?: ""
@@ -100,7 +103,7 @@ class UserUpdateFragment : Fragment() {
                             binding.editTextNewPassword.text.clear()
                         }
                 } else {
-                    Toast.makeText(context, "현재 비밀번호가 틀렸습니다", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "현재 비밀번호 불일치", Toast.LENGTH_SHORT).show()
                 }
             }
         }

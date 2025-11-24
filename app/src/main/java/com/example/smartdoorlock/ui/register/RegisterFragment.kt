@@ -7,13 +7,14 @@ import android.view.ViewGroup
 import android.widget.Toast
 import androidx.fragment.app.Fragment
 import androidx.navigation.fragment.findNavController
-import com.example.smartdoorlock.R
 import com.example.smartdoorlock.data.*
 import com.example.smartdoorlock.databinding.FragmentRegisterBinding
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.UserProfileChangeRequest // [필수] 프로필 업데이트용
 import com.google.firebase.database.FirebaseDatabase
 import java.text.SimpleDateFormat
 import java.util.*
+import com.example.smartdoorlock.R
 
 class RegisterFragment : Fragment() {
 
@@ -54,9 +55,25 @@ class RegisterFragment : Fragment() {
 
         auth.createUserWithEmailAndPassword(fakeEmail, password)
             .addOnSuccessListener { authResult ->
-                val uid = authResult.user?.uid
+                val user = authResult.user
+                val uid = user?.uid
+
                 if (uid != null) {
-                    saveFullUserStructure(username, password, name)
+                    // [핵심 수정] Firebase Auth 프로필에도 이름(DisplayName) 저장
+                    // 웹페이지에서 user.displayName으로 이름을 불러올 수 있게 됨
+                    val profileUpdates = UserProfileChangeRequest.Builder()
+                        .setDisplayName(name)
+                        .build()
+
+                    user.updateProfile(profileUpdates).addOnCompleteListener { task ->
+                        if (task.isSuccessful) {
+                            // 프로필 업데이트 후 DB 저장 진행
+                            saveFullUserStructure(username, password, name)
+                        } else {
+                            // 실패하더라도 DB 저장은 시도
+                            saveFullUserStructure(username, password, name)
+                        }
+                    }
                 }
             }
             .addOnFailureListener { e ->
@@ -68,7 +85,6 @@ class RegisterFragment : Fragment() {
     private fun saveFullUserStructure(username: String, password: String, name: String) {
         val currentTime = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
 
-        // 초기 로그
         val initialLogs = AppLogs(
             change = ChangeLogs(
                 auth = AuthLog("Initial: BLE", currentTime),
@@ -78,14 +94,8 @@ class RegisterFragment : Fragment() {
             )
         )
 
-        // 도어락 초기 상태 (이미지 3 반영)
         val initialDoorlock = UserDoorlock(
-            status = DoorlockStatus(
-                door_closed = true,
-                last_method = "INIT",
-                last_time = currentTime,
-                state = "LOCK"
-            )
+            status = DoorlockStatus(true, "INIT", currentTime, "LOCK")
         )
 
         val newUser = User(
@@ -95,10 +105,10 @@ class RegisterFragment : Fragment() {
             authMethod = "BLE",
             detailSettings = DetailSettings(true, 5, true),
             app_logs = initialLogs,
-            doorlock = initialDoorlock // 추가됨
+            doorlock = initialDoorlock
         )
 
-        // DB 저장
+        // ID를 키로 사용하여 저장
         database.getReference("users").child(username).setValue(newUser)
             .addOnSuccessListener {
                 Toast.makeText(context, "회원가입 완료!", Toast.LENGTH_SHORT).show()
