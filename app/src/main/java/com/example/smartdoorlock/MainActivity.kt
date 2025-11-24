@@ -35,6 +35,7 @@ class MainActivity : AppCompatActivity() {
     private val auth = FirebaseAuth.getInstance()
     private val database = FirebaseDatabase.getInstance()
 
+    // 리스너 중복 방지를 위한 변수
     private var authListener: ValueEventListener? = null
     private var authRef: DatabaseReference? = null
 
@@ -58,6 +59,7 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
+        // UWB 매니저 초기화
         uwbManager = UwbServiceManager(this)
         uwbManager.init()
 
@@ -72,10 +74,16 @@ class MainActivity : AppCompatActivity() {
 
         val appBarConfiguration = AppBarConfiguration(
             setOf(
-                R.id.navigation_dashboard, // 대시보드가 맨 앞
                 R.id.navigation_profile,
+                R.id.navigation_dashboard,
                 R.id.navigation_notifications,
-                R.id.navigation_settings
+                R.id.navigation_settings,
+                R.id.navigation_login,
+                R.id.deviceScanFragment,
+                R.id.navigation_auth_method,
+                R.id.navigation_detail_setting,
+                R.id.wifiSettingFragment,
+                R.id.navigation_help
             )
         )
         setupActionBarWithNavController(navController, appBarConfiguration)
@@ -83,14 +91,18 @@ class MainActivity : AppCompatActivity() {
         val navView: BottomNavigationView = binding.navView
         navView.setupWithNavController(navController)
 
-        // 화면 전환 리스너 (로그인 화면일 때 하단바 숨김)
+        // 화면 전환 리스너
         navController.addOnDestinationChangedListener { _, destination, _ ->
             when (destination.id) {
-                R.id.navigation_login, R.id.navigation_register -> {
+                R.id.navigation_login -> {
+                    navView.visibility = View.GONE // 하단 바 숨기기
+                }
+                R.id.navigation_register -> {
                     navView.visibility = View.GONE
                 }
                 else -> {
-                    navView.visibility = View.VISIBLE
+                    navView.visibility = View.VISIBLE // 그 외 모든 화면에서 하단 바 보이기
+                    // 로그인 후 메인 화면 진입 시 인증 모드 감시 시작
                     if (auth.currentUser != null) observeAuthMethod()
                 }
             }
@@ -102,16 +114,20 @@ class MainActivity : AppCompatActivity() {
             startLocationTrackingService()
         }
 
-        // [핵심] 로그인 상태 확인 및 이동
-        // 앱이 켜지면 기본적으로 '대시보드'가 로드됩니다.
-        // 하지만 로그인이 안 되어 있다면 즉시 '로그인 화면'으로 이동시킵니다.
-        if (auth.currentUser == null) {
-            navController.navigate(R.id.navigation_login)
-        } else {
+        // [삭제됨] 중복 네비게이션 코드 제거
+        // mobile_navigation.xml에서 startDestination으로 이미 login을 지정했으므로,
+        // 여기서 한 번 더 이동시키면 화면이 두 개가 쌓이는 문제가 발생합니다.
+        // if (savedInstanceState == null) {
+        //    navController.navigate(R.id.navigation_login)
+        // }
+
+        // 앱 시작 시 이미 로그인된 상태라면 감시 시작
+        if (auth.currentUser != null) {
             observeAuthMethod()
         }
     }
 
+    // Firebase DB 감시 (중복 실행 방지 적용)
     private fun observeAuthMethod() {
         if (authListener != null) return
 
@@ -121,15 +137,25 @@ class MainActivity : AppCompatActivity() {
         authListener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
                 val method = snapshot.getValue(String::class.java) ?: "BLE"
+                Log.d("AuthMonitor", "인증 모드 변경 감지: $method")
+
                 when (method) {
-                    "UWB" -> uwbManager.startRanging()
-                    else -> uwbManager.stopRanging()
+                    "UWB" -> {
+                        Log.i("AuthMonitor", "UWB 모드 활성화")
+                        uwbManager.startRanging()
+                    }
+                    else -> {
+                        Log.i("AuthMonitor", "UWB 모드 비활성화 (현재: $method)")
+                        uwbManager.stopRanging()
+                    }
                 }
             }
+
             override fun onCancelled(error: DatabaseError) {
                 Log.e("AuthMonitor", "DB 읽기 오류", error.toException())
             }
         }
+
         authRef?.addValueEventListener(authListener!!)
     }
 
@@ -162,9 +188,11 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // 앱 종료 시 리소스 정리
     override fun onDestroy() {
         super.onDestroy()
         uwbManager.stopRanging()
+
         if (authListener != null && authRef != null) {
             authRef?.removeEventListener(authListener!!)
             authListener = null

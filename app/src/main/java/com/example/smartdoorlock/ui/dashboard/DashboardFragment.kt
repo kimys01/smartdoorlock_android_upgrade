@@ -1,22 +1,17 @@
 package com.example.smartdoorlock.ui.dashboard
 
-import android.Manifest
-import android.content.Context
-import android.content.SharedPreferences
-import android.content.pm.PackageManager
 import android.os.Bundle
-import android.view.*
+import android.util.Log
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
 import android.widget.Toast
-import androidx.core.app.ActivityCompat
 import androidx.fragment.app.Fragment
-import androidx.lifecycle.lifecycleScope
-import com.example.smartdoorlock.api.RetrofitClient
-import com.example.smartdoorlock.data.AccessLog
-import com.example.smartdoorlock.data.DoorLockLog
+import androidx.navigation.fragment.findNavController
+import com.example.smartdoorlock.R
 import com.example.smartdoorlock.databinding.FragmentDashboardBinding
-import com.google.android.gms.location.*
+import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.database.FirebaseDatabase
-import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -25,14 +20,12 @@ class DashboardFragment : Fragment() {
     private var _binding: FragmentDashboardBinding? = null
     private val binding get() = _binding!!
 
-    private var userId: String? = null
-    private lateinit var statusPrefs: SharedPreferences
-    private lateinit var fusedLocationClient: FusedLocationProviderClient
+    // Firebase
+    private val auth = FirebaseAuth.getInstance()
+    private val database = FirebaseDatabase.getInstance()
 
     override fun onCreateView(
-        inflater: LayoutInflater,
-        container: ViewGroup?,
-        savedInstanceState: Bundle?
+        inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
     ): View {
         _binding = FragmentDashboardBinding.inflate(inflater, container, false)
         return binding.root
@@ -41,96 +34,106 @@ class DashboardFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        fusedLocationClient = LocationServices.getFusedLocationProviderClient(requireContext())
-
-        val prefs = requireContext().getSharedPreferences("login_prefs", Context.MODE_PRIVATE)
-        userId = prefs.getString("saved_id", null)
-        if (userId == null) {
-            Toast.makeText(context, "사용자 정보를 불러올 수 없습니다.", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        statusPrefs = requireContext().getSharedPreferences("status_prefs", Context.MODE_PRIVATE)
-
-        updateUI()
-
-        binding.LockOpen.setOnClickListener {
-            val lastStatus = statusPrefs.getString("last_status", "잠금")
-            val currentStatus = if (lastStatus == "잠금") "해제" else "잠금"
-            val statusTransition = "$lastStatus → $currentStatus"
-            statusPrefs.edit().putString("last_status", currentStatus).apply()
-
-            val method = "BLE"
-            val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
-
-            userId?.let { id ->
-                sendAccessLog(id, timestamp, statusTransition, method)
-                fetchAndSaveDoorlockLog(id, statusTransition, method, timestamp)
-            }
-
-            updateUI()
-        }
-    }
-
-    private fun updateUI() {
-        val lastStatus = statusPrefs.getString("last_status", "잠금")
-        if (lastStatus == "잠금") {
-            binding.LockOpen.text = "해제"
-            binding.textLockStatus.text = "상태 : 잠금"
-        } else {
-            binding.LockOpen.text = "잠금"
-            binding.textLockStatus.text = "상태 : 해제"
-        }
-    }
-
-    private fun sendAccessLog(userId: String, time: String, status: String, method: String) {
-        val log = AccessLog(user_id = userId, time = time, status = status, method = method)
-
-        lifecycleScope.launch {
+        // 1. [+ 새 도어락 등록] 버튼
+        binding.btnAddDevice.setOnClickListener {
             try {
-                val response = RetrofitClient.instance.sendLog(log)
-                if (response.isSuccessful) {
-                    Toast.makeText(context, "출입 로그 전송 성공", Toast.LENGTH_SHORT).show()
-                } else {
-                    Toast.makeText(context, "서버 응답 오류", Toast.LENGTH_SHORT).show()
-                }
+                findNavController().navigate(R.id.action_dashboard_to_scan)
             } catch (e: Exception) {
-                Toast.makeText(context, "연결 실패: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+                showSafeToast("이동 오류: 네비게이션을 확인하세요.")
             }
         }
+
+        // 2. [잠금 해제] 버튼 (팅김 방지 로직 적용)
+        binding.btnUnlock.setOnClickListener {
+            try {
+                unlockDoor()
+            } catch (e: Exception) {
+                Log.e("Dashboard", "버튼 클릭 처리 중 오류", e)
+                showSafeToast("오류가 발생했습니다: ${e.message}")
+            }
+        }
+
+        monitorDoorlockStatus()
     }
 
-    private fun fetchAndSaveDoorlockLog(userId: String, status: String, method: String, timestamp: String) {
-        if (ActivityCompat.checkSelfPermission(requireContext(), Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
-            ActivityCompat.checkSelfPermission(requireContext(), Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            Toast.makeText(context, "위치 권한이 필요합니다", Toast.LENGTH_SHORT).show()
+    private fun unlockDoor() {
+        val uid = auth.currentUser?.uid
+        if (uid == null) {
+            showSafeToast("로그인이 필요합니다.")
             return
         }
 
-        fusedLocationClient.lastLocation.addOnSuccessListener { location ->
-            val lat = location?.latitude ?: 0.0
-            val lon = location?.longitude ?: 0.0
+        // 내 도어락 목록 가져오기
+        val myLocksRef = database.getReference("users").child(uid).child("my_doorlocks")
 
-            val log = DoorLockLog(
-                user_id = userId,
-                status = status,
-                timestamp = timestamp,
-                method = method
-            )
+        myLocksRef.get().addOnSuccessListener { snapshot ->
+            // [안전장치 1] 비동기 작업 후 화면이 살아있는지 확인
+            if (!isAdded || _binding == null) return@addOnSuccessListener
 
-            FirebaseDatabase.getInstance().getReference("doorlock_logs")
-                .child(userId)
-                .push()
-                .setValue(log)
-                .addOnSuccessListener {
-                    Toast.makeText(context, "도어락 로그 저장 성공", Toast.LENGTH_SHORT).show()
+            // [안전장치 2] 데이터가 있고, 자식 노드(목록)가 실제로 존재하는지 확인
+            if (snapshot.exists() && snapshot.hasChildren()) {
+                try {
+                    // 첫 번째 도어락의 MAC 주소 가져오기 (없으면 예외 발생 가능하므로 try-catch)
+                    val firstLockMac = snapshot.children.first().key
+
+                    if (!firstLockMac.isNullOrEmpty()) {
+                        sendUnlockCommand(firstLockMac)
+                    } else {
+                        showSafeToast("도어락 정보가 잘못되었습니다.")
+                    }
+                } catch (e: NoSuchElementException) {
+                    showSafeToast("등록된 도어락 목록이 비어있습니다.")
                 }
-                .addOnFailureListener {
-                    Toast.makeText(context, "도어락 로그 저장 실패: ${it.message}", Toast.LENGTH_SHORT).show()
-                }
+            } else {
+                showSafeToast("등록된 도어락이 없습니다. 먼저 등록해주세요.")
+            }
+        }.addOnFailureListener { e ->
+            showSafeToast("데이터 불러오기 실패: ${e.message}")
+        }
+    }
 
+    private fun sendUnlockCommand(macAddress: String) {
+        val statusRef = database.getReference("doorlocks").child(macAddress).child("status")
+        val logsRef = database.getReference("doorlocks").child(macAddress).child("logs")
+
+        val currentTime = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
+
+        val updates = mapOf(
+            "state" to "UNLOCK",
+            "last_method" to "APP",
+            "last_time" to currentTime,
+            "door_closed" to false
+        )
+
+        statusRef.updateChildren(updates).addOnSuccessListener {
+            showSafeToast("문 열림 신호를 보냈습니다.")
         }.addOnFailureListener {
-            Toast.makeText(context, "위치 가져오기 실패: ${it.message}", Toast.LENGTH_SHORT).show()
+            showSafeToast("명령 전송 실패: ${it.message}")
+        }
+
+        // 로그 기록
+        val newLogKey = logsRef.push().key
+        if (newLogKey != null) {
+            val logData = mapOf(
+                "method" to "APP",
+                "state" to "UNLOCK",
+                "time" to currentTime
+            )
+            logsRef.child(newLogKey).setValue(logData)
+        }
+    }
+
+    private fun monitorDoorlockStatus() {
+        val uid = auth.currentUser?.uid ?: return
+        // 실시간 모니터링 로직 (필요 시 구현)
+    }
+
+    // [안전장치 3] Context가 null일 때 토스트 띄우면 앱 죽음 방지
+    private fun showSafeToast(message: String) {
+        if (context != null && isAdded) {
+            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        } else {
+            Log.w("Dashboard", "화면이 닫혀서 토스트를 띄우지 못함: $message")
         }
     }
 

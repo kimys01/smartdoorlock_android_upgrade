@@ -2,24 +2,22 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.example.smartdoorlock">
 
-    <!-- [기존 유지] 위치 및 서비스 권한 -->
+    <!-- 기존 권한 유지 -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.INTERNET" />
-
-    <!-- [필수 추가] 블루투스 권한 (Android 11 이하 호환용) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.BLUETOOTH" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
-
-    <!-- [필수 추가] 블루투스 권한 (Android 12 이상 필수) -->
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
-
-    <!-- [오류 해결 핵심] 와이파이 이름(SSID) 가져오기 권한 -->
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+
+    <!-- [추가] 데이터 동기화 포그라운드 서비스 권한 (Android 14+) -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
     <application
         android:allowBackup="true"
@@ -28,26 +26,30 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.Smartdoorlock">
-    <!-- 이전: @style/Theme.SmartDoorLock (대문자 D, L) -->
-    <!-- 변경: @style/Theme.Smartdoorlock (소문자 d, l) -->
 
-    <!-- 앱 실행 액티비티 -->
-    <activity
-        android:name=".MainActivity"
-        android:exported="true"
-        android:label="@string/app_name">
-        <intent-filter>
-            <action android:name="android.intent.action.MAIN" />
-            <category android:name="android.intent.category.LAUNCHER" />
-        </intent-filter>
-    </activity>
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
 
-    <!-- 위치 추적용 Foreground 서비스 -->
-    <service
-        android:name=".service.LocationService"
-        android:enabled="true"
-        android:exported="false"
-        android:foregroundServiceType="location" />
-</application>
+        <!-- 위치 서비스 -->
+        <service
+            android:name=".service.LocationService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="location" />
 
-    </manifest>
+        <!-- [추가] 알림 서비스 등록 -->
+        <service
+            android:name=".service.NotificationService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+    </application>
+
+</manifest>

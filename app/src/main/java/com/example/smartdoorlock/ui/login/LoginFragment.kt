@@ -2,7 +2,6 @@ package com.example.smartdoorlock.ui.login
 
 import android.content.Context
 import android.os.Bundle
-import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -33,19 +32,27 @@ class LoginFragment : Fragment() {
         auth = FirebaseAuth.getInstance()
 
         val prefs = requireActivity().getSharedPreferences("login_prefs", Context.MODE_PRIVATE)
+
+        // 저장된 아이디와 설정 불러오기
         val savedId = prefs.getString("saved_id", "")
         val autoLogin = prefs.getBoolean("auto_login", false)
+        val rememberId = prefs.getBoolean("remember_id", false) // [추가] 아이디 기억하기 여부
 
-        binding.editTextId.setText(savedId)
-        binding.checkboxSaveId.isChecked = !savedId.isNullOrEmpty()
+        // 아이디 기억하기가 체크되어 있었다면 입력창에 채움
+        if (rememberId) {
+            binding.editTextId.setText(savedId)
+            binding.checkboxSaveId.isChecked = true
+        }
         binding.checkboxAutoLogin.isChecked = autoLogin
 
-        // 이미 로그인된 경우 대시보드로 이동
-        if (auth.currentUser != null) {
+        // [핵심 수정] 자동 로그인 체크 (Firebase 로그인 상태 + 저장된 아이디 존재 여부 확인)
+        // savedId가 없으면 DB 경로를 못 찾으므로 자동 로그인을 하지 않고 다시 입력받아야 함
+        if (autoLogin && auth.currentUser != null && !savedId.isNullOrEmpty()) {
             navigateToDashboard()
             return
         }
 
+        // 로그인 버튼 클릭
         binding.buttonLogin.setOnClickListener {
             val inputId = binding.editTextId.text.toString().trim()
             val password = binding.editTextPassword.text.toString().trim()
@@ -55,27 +62,29 @@ class LoginFragment : Fragment() {
                 return@setOnClickListener
             }
 
-            val emailForAuth = "$inputId@doorlock.com"
+            // 일반 아이디 -> 이메일 형식 변환
+            val emailForAuth = if(inputId.contains("@")) inputId else "$inputId@doorlock.com"
 
             auth.signInWithEmailAndPassword(emailForAuth, password)
                 .addOnCompleteListener { task ->
                     if (task.isSuccessful) {
                         val editor = prefs.edit()
-                        if (binding.checkboxSaveId.isChecked) {
-                            editor.putString("saved_id", inputId)
-                        } else {
-                            editor.remove("saved_id")
-                        }
+
+                        // [중요] 앱 동작을 위해 'saved_id'는 무조건 저장해야 함 (다른 화면에서 사용)
+                        editor.putString("saved_id", inputId)
+
+                        // '아이디 기억하기' 체크 여부 저장
+                        editor.putBoolean("remember_id", binding.checkboxSaveId.isChecked)
+
+                        // '자동 로그인' 체크 여부 저장
                         editor.putBoolean("auto_login", binding.checkboxAutoLogin.isChecked)
+
                         editor.apply()
 
                         Toast.makeText(context, "로그인 성공", Toast.LENGTH_SHORT).show()
-
-                        // 로그인 성공 시 이동
                         navigateToDashboard()
                     } else {
                         Toast.makeText(context, "로그인 실패: 아이디나 비밀번호를 확인하세요.", Toast.LENGTH_SHORT).show()
-                        Log.e("LoginError", "Error: ${task.exception?.message}")
                     }
                 }
         }
@@ -85,17 +94,10 @@ class LoginFragment : Fragment() {
         }
     }
 
-    // [핵심 수정] 내비게이션 그래프에 정의된 액션(Action)을 사용하여 이동
     private fun navigateToDashboard() {
         try {
-            // mobile_navigation.xml에 정의된 action_login_to_dashboard 액션을 실행합니다.
-            // 이 액션에는 app:popUpTo="@id/mobile_navigation" app:popUpToInclusive="true"가
-            // 설정되어 있어 이전 화면 기록을 모두 지우고 대시보드로 이동합니다.
             findNavController().navigate(R.id.action_login_to_dashboard)
         } catch (e: Exception) {
-            // 만약 액션을 찾지 못할 경우를 대비한 예외 처리 (보통 XML 설정이 잘 되어있으면 발생하지 않음)
-            Log.e("NavError", "네비게이션 이동 실패", e)
-            // 비상 시 직접 이동 (스택 정리는 덜 될 수 있음)
             findNavController().navigate(R.id.navigation_dashboard)
         }
     }
