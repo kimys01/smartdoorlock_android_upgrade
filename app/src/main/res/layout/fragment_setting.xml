@@ -31,6 +31,16 @@
             android:textSize="50sp"
             android:background="@drawable/gradient_button_background"
             android:textColor="#FFFFFF"/>
+
+        <androidx.appcompat.widget.AppCompatButton
+            android:id="@+id/buttonInviteMember"
+            android:layout_width="match_parent"
+            android:layout_height="100dp"
+            android:layout_marginBottom="8dp"
+            android:text="사용자 초대"
+            android:textSize="50sp"
+            android:background="@drawable/gradient_button_background"
+            android:textColor="#FFFFFF"/>
         <!-- [수정] AppCompatButton으로 변경, 그라데이션 및 텍스트 색상 적용 -->
         <androidx.appcompat.widget.AppCompatButton
             android:id="@+id/buttonAuthMethod"

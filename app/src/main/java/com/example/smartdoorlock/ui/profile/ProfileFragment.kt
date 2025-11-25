@@ -11,18 +11,18 @@ import androidx.navigation.fragment.findNavController
 import com.example.smartdoorlock.R
 import com.example.smartdoorlock.databinding.FragmentProfileBinding
 import com.google.firebase.auth.FirebaseAuth
-// import com.google.firebase.database.* // 현재 레이아웃에서 사용하지 않는 DB 기능 주석 처리
+import com.google.firebase.database.DataSnapshot
+import com.google.firebase.database.DatabaseError
+import com.google.firebase.database.FirebaseDatabase
+import com.google.firebase.database.ValueEventListener
 
 class ProfileFragment : Fragment() {
 
     private var _binding: FragmentProfileBinding? = null
-    // binding 변수는 onCreateView와 onDestroyView 사이에서만 유효합니다.
     private val binding get() = _binding!!
 
     private val auth = FirebaseAuth.getInstance()
-
-    // 새로운 디자인에서는 아직 DB 데이터를 바인딩할 뷰 ID가 지정되지 않았으므로 주석 처리합니다.
-    // private val database = FirebaseDatabase.getInstance()
+    private val database = FirebaseDatabase.getInstance()
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         _binding = FragmentProfileBinding.inflate(inflater, container, false)
@@ -32,66 +32,97 @@ class ProfileFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        // [삭제됨] checkRegisteredDevice()
-        // 이유: 새로운 XML 레이아웃(fragment_profile.xml)에는 'cardViewRegistered', 'tvRegisteredMac' ID가 없습니다.
-        // 현재 디자인은 정적인 'User Info' 카드(홍길동)를 보여주고 있습니다.
+        // 1. 사용자 정보(이름, 아이디) 불러오기
+        loadUserProfile()
 
-        // 1. 내 정보 수정 버튼
-        binding.btnEditProfile.setOnClickListener {
-            // 네비게이션 액션 ID가 nav_graph.xml에 정의되어 있어야 합니다.
-            safeNavigate(R.id.navigation_user_update)
-        }
+        // 2. 등록된 기기 확인 (도어락 카드 표시 여부 결정)
+        checkRegisteredDevice()
 
-        // 2. 새 도어락 연결 버튼
-        binding.btnConnectDevice.setOnClickListener {
-            // 네비게이션 액션 ID가 nav_graph.xml에 정의되어 있어야 합니다.
-            safeNavigate(R.id.action_profile_to_scan)
-        }
-
-        // 3. 로그아웃 버튼 (다이얼로그 띄우기)
-        binding.btnLogout.setOnClickListener {
-            showLogoutConfirmationDialog()
-        }
+        // 버튼 리스너 연결
+        binding.btnEditProfile.setOnClickListener { safeNavigate(R.id.navigation_user_update) }
+        binding.btnConnectDevice.setOnClickListener { safeNavigate(R.id.action_profile_to_scan) }
+        binding.btnLogout.setOnClickListener { showLogoutConfirmationDialog() }
     }
 
+    // [신규] 사용자 프로필 정보 로드
+    private fun loadUserProfile() {
+        val prefs = requireActivity().getSharedPreferences("login_prefs", Context.MODE_PRIVATE)
+        val userId = prefs.getString("saved_id", null)
+
+        if (userId == null) {
+            binding.tvUserName.text = "게스트"
+            binding.tvUserId.text = "로그인 정보 없음"
+            return
+        }
+
+        // DB에서 이름 가져오기
+        database.getReference("users").child(userId).child("name").get()
+            .addOnSuccessListener { snapshot ->
+                if (_binding == null) return@addOnSuccessListener
+                val name = snapshot.getValue(String::class.java) ?: "사용자"
+
+                // UI 업데이트
+                binding.tvUserName.text = name
+                binding.tvUserId.text = "ID: $userId"
+            }
+            .addOnFailureListener {
+                if (_binding != null) {
+                    binding.tvUserName.text = "사용자"
+                    binding.tvUserId.text = "ID: $userId"
+                }
+            }
+    }
+
+    // 등록된 도어락 확인
+    private fun checkRegisteredDevice() {
+        val prefs = requireActivity().getSharedPreferences("login_prefs", Context.MODE_PRIVATE)
+        val userId = prefs.getString("saved_id", null) ?: return
+
+        val myLocksRef = database.getReference("users").child(userId).child("my_doorlocks")
+
+        myLocksRef.addListenerForSingleValueEvent(object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                if (_binding == null) return
+
+                if (snapshot.exists() && snapshot.childrenCount > 0) {
+                    // 도어락이 있으면 카드 보이기
+                    binding.cardViewRegistered.visibility = View.VISIBLE
+                    val firstMac = snapshot.children.first().key
+                    binding.tvRegisteredMac.text = "MAC: $firstMac"
+                } else {
+                    // 없으면 숨기기
+                    binding.cardViewRegistered.visibility = View.GONE
+                }
+            }
+
+            override fun onCancelled(error: DatabaseError) {
+                if (_binding != null) binding.cardViewRegistered.visibility = View.GONE
+            }
+        })
+    }
+
+    // 로그아웃 확인창
     private fun showLogoutConfirmationDialog() {
         AlertDialog.Builder(requireContext())
             .setTitle("로그아웃")
             .setMessage("정말 로그아웃 하시겠습니까?")
-            .setPositiveButton("확인") { _, _ ->
-                performLogout()
-            }
+            .setPositiveButton("확인") { _, _ -> performLogout() }
             .setNegativeButton("취소", null)
             .show()
     }
 
     private fun performLogout() {
-        // 1. Firebase 로그아웃
-        auth.signOut()
-
-        // 2. 자동 로그인 정보 삭제 (SharedPreferences)
+        FirebaseAuth.getInstance().signOut()
         val prefs = requireActivity().getSharedPreferences("login_prefs", Context.MODE_PRIVATE)
         prefs.edit().clear().apply()
-
-        // 3. 로그인 화면으로 이동
-        // action_global_login이 nav_graph.xml에 정의되어 있어야 합니다.
-        try {
-            findNavController().navigate(R.id.action_global_login)
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
+        findNavController().navigate(R.id.action_global_login)
     }
 
-    // 안전한 네비게이션 이동 함수
     private fun safeNavigate(actionId: Int) {
         val navController = findNavController()
-        // 현재 목적지가 ProfileFragment일 때만 이동 (중복 클릭 방지)
         if (navController.currentDestination?.id == R.id.navigation_profile) {
-            try {
-                navController.navigate(actionId)
-            } catch (e: IllegalArgumentException) {
-                e.printStackTrace()
-            }
+            try { navController.navigate(actionId) }
+            catch (e: Exception) { e.printStackTrace() }
         }
     }
 

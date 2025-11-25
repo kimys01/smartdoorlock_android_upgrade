@@ -52,6 +52,11 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.ktx)
     implementation(libs.androidx.navigation.fragment.ktx)
     implementation(libs.androidx.navigation.ui.ktx)
+    // [추가] Firebase Storage (이미지 저장소)
+    implementation("com.google.firebase:firebase-storage-ktx")
+
+    // [추가] Glide (이미지 로딩 라이브러리)
+    implementation("com.github.bumptech.glide:glide:4.16.0")
 
     // Google Location Service
     implementation("com.google.android.gms:play-services-location:21.0.1")

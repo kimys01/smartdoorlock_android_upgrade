@@ -110,5 +110,6 @@
     <fragment android:id="@+id/navigation_auth_method" android:name="com.example.smartdoorlock.ui.settings.AuthMethodFragment" android:label="인증방식" tools:layout="@layout/fragment_auth_method"/>
     <fragment android:id="@+id/navigation_detail_setting" android:name="com.example.smartdoorlock.ui.settings.DetailSettingFragment" android:label="상세설정" tools:layout="@layout/fragment_detail_setting" />
     <fragment android:id="@+id/navigation_help" android:name="com.example.smartdoorlock.ui.settings.HelpFragment" android:label="도움말" tools:layout="@layout/fragment_help"/>
+    <fragment android:id="@+id/navigation_add_member" android:name="com.example.smartdoorlock.ui.settings.AddMemberFragment" android:label="사용자 추가" tools:layout="@layout/fragment_add_member"/>
 
 </navigation>

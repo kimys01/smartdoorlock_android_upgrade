@@ -28,6 +28,7 @@ class SettingsFragment : Fragment() {
         binding.buttonDetailSetting.setOnClickListener { safeNavigate(R.id.navigation_detail_setting) }
         binding.buttonWifiSetting.setOnClickListener { safeNavigate(R.id.wifiSettingFragment) }
         binding.buttonHelp.setOnClickListener { safeNavigate(R.id.navigation_help) }
+        binding.buttonInviteMember.setOnClickListener { safeNavigate(R.id.navigation_add_member) }
     }
 
     // [핵심] 팅김 방지: 현재 위치가 '설정'일 때만 이동 수행
