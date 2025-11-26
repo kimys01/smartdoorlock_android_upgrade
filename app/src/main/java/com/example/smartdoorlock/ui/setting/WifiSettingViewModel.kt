@@ -10,8 +10,10 @@ import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import com.example.smartdoorlock.data.DetailSettings
 import com.example.smartdoorlock.data.Doorlock
-import com.example.smartdoorlock.data.FixedLocation // [추가]
-import com.google.android.gms.location.LocationServices // [추가] 위치 서비스
+import com.example.smartdoorlock.data.FixedLocation
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
+import com.google.android.gms.tasks.CancellationTokenSource
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.database.FirebaseDatabase
 import java.text.SimpleDateFormat
@@ -30,7 +32,6 @@ class WifiSettingViewModel(application: Application) : AndroidViewModel(applicat
     private val db = FirebaseDatabase.getInstance()
     private val auth = FirebaseAuth.getInstance()
 
-    // [핵심] 핸드폰의 현재 위치를 가져오기 위한 도구
     private val fusedLocationClient by lazy {
         LocationServices.getFusedLocationProviderClient(getApplication<Application>())
     }
@@ -101,95 +102,102 @@ class WifiSettingViewModel(application: Application) : AndroidViewModel(applicat
             }
     }
 
-    fun sendWifiSettings(ssid: String, pass: String) {
-        if (_isBleConnected.value != true) {
-            _statusText.value = "오류: 도어락 연결 끊김. 다시 연결해주세요."
+    // [수정] 위치 정보 + 랜덤 ID 생성하여 전송 및 DB 저장
+    fun sendWifiSettingsWithLocation(ssid: String, pw: String, lat: Double, lon: Double, alt: Double) {
+        if (bluetoothGatt == null) {
+            _statusText.value = "BLE 연결 상태를 확인해주세요."
             return
         }
 
-        // [핵심 로직] 핸드폰 위치를 가져와서 도어락 정보와 함께 저장
-        registerSharedDoorlock(targetAddress, ssid, pass)
+        // 1. 랜덤 도어락 ID 생성 (예: "fb3a2-...")
+        val randomId = UUID.randomUUID().toString()
 
-        val payload = "ssid:$ssid,password:$pass"
+        // 2. DB에 등록 (랜덤 ID 사용, 위치 정보 포함)
+        // 전달받은 lat, lon, alt가 0.0일 경우 현재 위치를 다시 시도
+        if (lat == 0.0 && lon == 0.0) {
+            getCurrentLocationAndRegister(targetAddress, randomId, ssid, pw)
+        } else {
+            registerSharedDoorlock(targetAddress, randomId, ssid, pw, lat, lon, alt)
+            sendBlePayload(ssid, pw, randomId)
+        }
+    }
 
-        Log.d("BLE_CHECK", "🚀 [전송 요청] $payload")
-        _statusText.value = "설정값 전송 시도..."
+    // [추가] 현재 위치를 가져와서 등록하는 함수
+    @SuppressLint("MissingPermission")
+    private fun getCurrentLocationAndRegister(mac: String, doorlockId: String, ssid: String, pass: String) {
+        val cancellationTokenSource = CancellationTokenSource()
+
+        fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, cancellationTokenSource.token)
+            .addOnSuccessListener { location ->
+                val lat = location?.latitude ?: 0.0
+                val lon = location?.longitude ?: 0.0
+                val alt = location?.altitude ?: 0.0
+
+                Log.d("WifiSetting", "Fetched Location: $lat, $lon")
+
+                registerSharedDoorlock(mac, doorlockId, ssid, pass, lat, lon, alt)
+                sendBlePayload(ssid, pass, doorlockId)
+            }
+            .addOnFailureListener {
+                Log.e("WifiSetting", "Location fetch failed", it)
+                // 실패 시 0.0으로 등록
+                registerSharedDoorlock(mac, doorlockId, ssid, pass, 0.0, 0.0, 0.0)
+                sendBlePayload(ssid, pass, doorlockId)
+            }
+    }
+
+    private fun sendBlePayload(ssid: String, pw: String, id: String) {
+        // 3. 도어락(ESP32)으로 정보 전송 (ID 포함)
+        val payload = "ssid:$ssid,password:$pw,id:$id"
+
+        Log.d("BLE", "Sending data: $payload")
+        _statusText.postValue("설정값 전송 시도...")
 
         val result = writeCharacteristic(WIFI_CTRL_UUID, payload)
         if (!result) {
-            _statusText.value = "전송 실패: UUID를 찾을 수 없습니다."
+            _statusText.postValue("전송 실패: UUID를 찾을 수 없습니다.")
         }
     }
 
-    // --- 도어락 등록 및 위치 고정 로직 ---
-    @SuppressLint("MissingPermission") // 위치 권한은 Fragment 진입 시 이미 체크됨
-    private fun registerSharedDoorlock(mac: String, ssid: String, pass: String) {
+    // 기존 함수 호환성 유지
+    fun sendWifiSettings(ssid: String, pass: String) {
+        sendWifiSettingsWithLocation(ssid, pass, 0.0, 0.0, 0.0)
+    }
+
+    // [수정] 도어락 등록 로직 (위치 정보 저장 추가)
+    private fun registerSharedDoorlock(mac: String, doorlockId: String, ssid: String, pass: String, lat: Double, lon: Double, alt: Double) {
         val userId = getSavedUserId() ?: return
         val currentTime = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
 
-        val doorlocksRef = db.getReference("doorlocks").child(mac)
+        val doorlocksRef = db.getReference("doorlocks").child(doorlockId)
         val userDoorlocksRef = db.getReference("users").child(userId).child("my_doorlocks")
 
-        // 1. 핸드폰의 현재 GPS 위치 가져오기 (도어락 위치로 고정)
-        fusedLocationClient.lastLocation.addOnCompleteListener { task ->
-            var fixedLocation = FixedLocation() // 기본값 (0,0,0)
+        // [핵심] 고정 위치 객체 생성 (전달받은 좌표 사용)
+        // 이 좌표가 도어락의 고정 위치로 저장됩니다.
+        val fixedLocation = FixedLocation(latitude = lat, longitude = lon, altitude = alt)
 
-            if (task.isSuccessful && task.result != null) {
-                val loc = task.result
-                // 핸드폰의 위치를 도어락 위치로 설정
-                fixedLocation = FixedLocation(
-                    latitude = loc.latitude,
-                    longitude = loc.longitude,
-                    altitude = loc.altitude
-                )
-                Log.d("DB_SHARE", "📍 도어락 위치 고정: ${loc.latitude}, ${loc.longitude}, 고도:${loc.altitude}")
-            } else {
-                Log.w("DB_SHARE", "⚠️ 위치를 가져올 수 없음. (기본값 0.0으로 저장됩니다)")
-            }
+        // DB 업데이트
+        Log.d("DB_SHARE", "신규 도어락 생성 (ID: $doorlockId, Loc: $lat, $lon)")
 
-            // 2. DB 업데이트
-            doorlocksRef.get().addOnSuccessListener { snapshot ->
-                if (snapshot.exists()) {
-                    // A. 이미 등록된 도어락 -> 멤버 추가
-                    Log.d("DB_SHARE", "기존 도어락 갱신")
-                    doorlocksRef.child("members").child(userId).setValue("member")
-                    userDoorlocksRef.child(mac).setValue(true)
+        val members = HashMap<String, String>()
+        members[userId] = "admin"
 
-                    // 와이파이 정보 갱신
-                    doorlocksRef.child("ssid").setValue(ssid)
-                    doorlocksRef.child("pw").setValue(pass)
-                    doorlocksRef.child("lastUpdated").setValue(currentTime)
+        // Doorlock 객체 생성
+        val newLock = Doorlock(
+            mac = mac, // 실제 기기 MAC 주소는 내부에 저장
+            ssid = ssid,
+            pw = pass,
+            detailSettings = DetailSettings(true, 5, true),
+            members = members,
+            location = fixedLocation, // [저장] 여기가 도어락의 고정 위치가 됩니다.
+            lastUpdated = currentTime
+        )
 
-                    // [선택] 기존에 위치 정보가 없었다면 이번 기회에 저장
-                    if (!snapshot.hasChild("location")) {
-                        doorlocksRef.child("location").setValue(fixedLocation)
-                    }
+        doorlocksRef.setValue(newLock)
 
-                } else {
-                    // B. 신규 등록 -> 관리자로 등록하고 위치 고정
-                    Log.d("DB_SHARE", "신규 도어락 생성 (위치 포함)")
-
-                    val members = HashMap<String, String>()
-                    members[userId] = "admin"
-
-                    val newLock = Doorlock(
-                        mac = mac,
-                        ssid = ssid,
-                        pw = pass,
-                        detailSettings = DetailSettings(true, 5, true),
-                        members = members,
-                        location = fixedLocation, // [저장] 여기가 도어락의 고정 위치가 됩니다.
-                        lastUpdated = currentTime
-                    )
-
-                    doorlocksRef.setValue(newLock)
-                    userDoorlocksRef.child(mac).setValue(true)
-                }
-            }
-        }
+        // 사용자의 내 도어락 목록에 '랜덤 ID'를 저장
+        userDoorlocksRef.child(doorlockId).setValue(true)
     }
-
-    // --- BLE 내부 로직 (이하는 기존과 동일) ---
 
     private fun connectGatt(address: String) {
         try {
@@ -238,10 +246,7 @@ class WifiSettingViewModel(application: Application) : AndroidViewModel(applicat
         }
         override fun onCharacteristicWrite(gatt: BluetoothGatt?, c: BluetoothGattCharacteristic?, s: Int) {
             if (s == BluetoothGatt.GATT_SUCCESS) {
-                val sentData = String(c?.value ?: byteArrayOf(), Charsets.UTF_8)
-                if (sentData.contains("ssid:") && sentData.contains("password:")) {
-                    _statusText.postValue("전송 완료! 도어락 응답 대기 중...")
-                }
+                // 쓰기 성공 처리
             } else {
                 _statusText.postValue("전송 실패 (Error: $s)")
             }
@@ -249,10 +254,10 @@ class WifiSettingViewModel(application: Application) : AndroidViewModel(applicat
         override fun onCharacteristicChanged(gatt: BluetoothGatt, c: BluetoothGattCharacteristic, value: ByteArray) {
             val response = String(value, Charsets.UTF_8)
             if (response == "SUCCESS") {
-                _statusText.postValue("성공: 도어락이 Wi-Fi에 연결되었습니다!")
+                _statusText.postValue("성공: 도어락 설정이 완료되었습니다!")
                 closeGatt()
             } else if (response.startsWith("FAIL")) {
-                _statusText.postValue("실패: 와이파이 정보 확인 필요")
+                _statusText.postValue("실패: 정보를 확인해주세요")
             } else {
                 _statusText.postValue("상태: $response")
             }

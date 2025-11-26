@@ -2,6 +2,7 @@ package com.example.smartdoorlock.ui.profile
 
 import android.app.AlertDialog
 import android.content.Context
+import android.graphics.Color
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -161,7 +162,7 @@ class ProfileFragment : Fragment() {
         override fun onBindViewHolder(holder: ViewHolder, position: Int) {
             holder.tvName.text = members[position]
             holder.tvName.textSize = 14f
-            holder.tvName.setTextColor(android.graphics.Color.parseColor("#374151"))
+            holder.tvName.setTextColor(Color.parseColor("#374151"))
         }
 
         override fun getItemCount() = members.size
