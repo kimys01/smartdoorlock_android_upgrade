@@ -6,10 +6,12 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.view.View
+import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.navigation.NavController
+import androidx.navigation.NavOptions
 import androidx.navigation.fragment.NavHostFragment
 import androidx.navigation.ui.AppBarConfiguration
 import androidx.navigation.ui.setupActionBarWithNavController
@@ -80,10 +82,33 @@ class MainActivity : AppCompatActivity() {
         setupActionBarWithNavController(navController, appBarConfiguration)
         binding.navView.setupWithNavController(navController)
 
-        // [수정] 화면 전환 시 UI 제어
+        // [수정] BottomNavigationView 아이템 선택 리스너 재정의
+        // 탭을 누를 때마다 해당 탭의 시작점(홈)으로 이동하고 백스택을 정리하여
+        // '수정 화면' 등이 남아있는 문제를 해결합니다.
+        binding.navView.setOnItemSelectedListener { item ->
+            // 이미 선택된 탭을 다시 누른 경우가 아닐 때만 처리 (혹은 다시 눌러도 초기화하고 싶으면 조건 제거)
+            if (item.itemId != binding.navView.selectedItemId) {
+                val navOptions = NavOptions.Builder()
+                    .setLaunchSingleTop(true)
+                    .setPopUpTo(item.itemId, true) // 현재 탭의 스택을 모두 지움
+                    .build()
+
+                try {
+                    // 네비게이션 그래프의 ID와 메뉴 ID가 일치해야 함
+                    navController.navigate(item.itemId, null, navOptions)
+                    return@setOnItemSelectedListener true
+                } catch (e: IllegalArgumentException) {
+                    return@setOnItemSelectedListener false
+                }
+            }
+            // 같은 탭을 다시 누른 경우: 스택을 비우고 최상위 화면으로 이동 (선택 사항)
+            // navController.popBackStack(item.itemId, false)
+            true
+        }
+
+        // 화면 전환 시 UI 제어 및 로그인 상태 체크
         navController.addOnDestinationChangedListener { _, destination, _ ->
             when (destination.id) {
-                // 로그인, 회원가입, 비밀번호 찾기 화면에서는 상단/하단 바 숨김
                 R.id.navigation_login,
                 R.id.navigation_register,
                 R.id.findPasswordFragment -> {
@@ -91,13 +116,32 @@ class MainActivity : AppCompatActivity() {
                     supportActionBar?.hide()
                 }
                 else -> {
-                    binding.navView.visibility = View.VISIBLE
-                    supportActionBar?.show()
-
-                    if (auth.currentUser != null) observeAuthMethod()
+                    if (auth.currentUser == null) {
+                        val navOptions = NavOptions.Builder()
+                            .setPopUpTo(R.id.mobile_navigation, true)
+                            .build()
+                        navController.navigate(R.id.navigation_login, null, navOptions)
+                    } else {
+                        binding.navView.visibility = View.VISIBLE
+                        supportActionBar?.show()
+                        observeAuthMethod()
+                    }
                 }
             }
         }
+
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                val currentDestination = navController.currentDestination?.id
+                if (currentDestination == R.id.navigation_login && auth.currentUser == null) {
+                    finish()
+                } else {
+                    if (!navController.popBackStack()) {
+                        finish()
+                    }
+                }
+            }
+        })
 
         if (!hasAllPermissions()) {
             ActivityCompat.requestPermissions(this, REQUIRED_PERMISSIONS, REQUEST_ALL_PERMISSIONS)
@@ -106,7 +150,10 @@ class MainActivity : AppCompatActivity() {
         }
 
         if (auth.currentUser == null) {
-            navController.navigate(R.id.navigation_login)
+            val navOptions = NavOptions.Builder()
+                .setPopUpTo(R.id.mobile_navigation, true)
+                .build()
+            navController.navigate(R.id.navigation_login, null, navOptions)
         }
     }
 
