@@ -18,7 +18,7 @@ import com.example.smartdoorlock.data.DoorlockLog
 import com.example.smartdoorlock.data.LocationLog
 import com.example.smartdoorlock.data.UwbLog
 import com.example.smartdoorlock.utils.LocationUtils
-import com.google.android.gms.location.*
+import com.google.android.gms.location.* // Google Location Services 사용
 import com.google.firebase.database.DataSnapshot
 import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.FirebaseDatabase
@@ -37,7 +37,9 @@ class LocationService : Service() {
     private val CHANNEL_ID = "location_channel"
     private val NOTIFICATION_ID = 1
 
-    // 위치 업데이트 주기 (3분마다 저장)
+    // 위치 업데이트 주기 설정
+    // UPDATE_INTERVAL_MS: 위치 수신 주기 (10초) - UWB 거리 체크 등 실시간 반응용
+    // SAVE_INTERVAL_MS: DB 저장 주기 (3분) - 배터리 절약 및 로그 과다 생성 방지용
     private val UPDATE_INTERVAL_MS: Long = 10 * 1000L
     private val SAVE_INTERVAL_MS: Long = 3 * 60 * 1000L
     private var lastSavedTime: Long = 0
@@ -53,7 +55,7 @@ class LocationService : Service() {
 
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
 
-        // [수정] LocationCallback 초기화
+        // 위치 콜백 정의
         locationCallback = object : LocationCallback() {
             override fun onLocationResult(locationResult: LocationResult) {
                 for (location in locationResult.locations) {
@@ -78,17 +80,47 @@ class LocationService : Service() {
         loadDoorlockInfo()
     }
 
+    // 위치 처리 로직
     private fun processLocation(location: Location) {
         val currentTime = System.currentTimeMillis()
 
-        // [핵심] 앱 실행 여부와 관계없이 주기적으로 위치 로그 저장
+        // [핵심] 3분 타이머 로직
+        // 마지막 저장 시간으로부터 3분(SAVE_INTERVAL_MS) 이상 지났는지 확인
         if (currentTime - lastSavedTime >= SAVE_INTERVAL_MS) {
             saveLocationToDB(location)
             lastSavedTime = currentTime
-            Log.d("LocationService", "📍 백그라운드 위치 저장 완료: ${location.latitude}, ${location.longitude}")
+            Log.d("LocationService", "📍 3분 주기 위치 로그 저장 완료: ${location.latitude}, ${location.longitude}")
         }
 
+        // UWB 거리 체크 등 다른 로직 수행 (이건 10초마다 실행됨)
         checkDistanceAndControlUwb(location)
+    }
+
+    // [핵심] 위치 로그 DB 저장 쿼리
+    private fun saveLocationToDB(location: Location) {
+        val prefs = getSharedPreferences("login_prefs", Context.MODE_PRIVATE)
+        val username = prefs.getString("saved_id", null) ?: return
+
+        // 시간 포맷 설정
+        val timestamp = SimpleDateFormat("yyyy.MM.dd H:mm:ss", Locale.getDefault()).format(Date())
+
+        // LocationLog 객체 생성 (시간, 경도, 위도, 고도 포함)
+        val log = LocationLog(
+            altitude = location.altitude,
+            latitude = location.latitude,
+            longitude = location.longitude,
+            timestamp = timestamp
+        )
+
+        // Firebase 쿼리: users/{username}/location_logs 경로에 push()로 저장
+        // push()를 사용하면 고유한 키가 생성되어 로그가 쌓임
+        database.getReference("users").child(username).child("location_logs").push().setValue(log)
+            .addOnSuccessListener {
+                Log.d("LocationService", "DB 저장 성공")
+            }
+            .addOnFailureListener { e ->
+                Log.e("LocationService", "DB 저장 실패: ${e.message}")
+            }
     }
 
     private fun saveUwbLogToDB(front: Double, back: Double) {
@@ -243,14 +275,6 @@ class LocationService : Service() {
             }
     }
 
-    private fun saveLocationToDB(location: Location) {
-        val prefs = getSharedPreferences("login_prefs", Context.MODE_PRIVATE)
-        val username = prefs.getString("saved_id", null) ?: return
-        val timestamp = SimpleDateFormat("yyyy.MM.dd H:mm", Locale.getDefault()).format(Date())
-        val log = LocationLog(location.altitude, location.latitude, location.longitude, timestamp)
-        database.getReference("users").child(username).child("location_logs").push().setValue(log)
-    }
-
     override fun onBind(intent: Intent?): IBinder? = null
 
     private fun createNotificationChannel() {
@@ -263,7 +287,6 @@ class LocationService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
-        // 서비스 종료 시 업데이트 제거
         if (::fusedLocationClient.isInitialized && ::locationCallback.isInitialized) {
             fusedLocationClient.removeLocationUpdates(locationCallback)
         }

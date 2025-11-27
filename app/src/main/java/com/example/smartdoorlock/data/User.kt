@@ -19,6 +19,7 @@ data class User(
     val doorlock: UserDoorlock = UserDoorlock(),
 
     // [위치 로그 리스트]
+    // LocationLog 클래스는 별도 파일(LocationLog.kt)에 정의되어 있습니다.
     val location_logs: HashMap<String, LocationLog> = HashMap(),
 
     // [UWB 로그 리스트]
@@ -46,12 +47,8 @@ data class UwbLog(
     val timestamp: String = ""
 )
 
-data class LocationLog(
-    val altitude: Double = 0.0,
-    val latitude: Double = 0.0,
-    val longitude: Double = 0.0,
-    val timestamp: String = ""
-)
+// [삭제됨] LocationLog 중복 정의 제거
+// LocationLog는 별도 파일(LocationLog.kt)로 분리되었으므로 여기서 삭제해야 합니다.
 
 data class DetailSettings(
     val autoLockEnabled: Boolean = true,
