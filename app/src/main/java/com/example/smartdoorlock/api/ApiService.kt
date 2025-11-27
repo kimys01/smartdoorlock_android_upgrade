@@ -8,12 +8,14 @@ import retrofit2.http.*
 
 interface ApiService {
 
+    // [수정] 맨 앞의 '/' 제거 (상대 경로 사용)
     // 출입 기록 저장
-    @POST("/logs")
+    @POST("logs")
     suspend fun sendLog(@Body log: AccessLog): Response<Void>
 
+    // [수정] 맨 앞의 '/' 제거
     // 출입 기록 불러오기
-    @GET("/logs")
+    @GET("logs")
     suspend fun getLogs(): List<AccessLog>
 
     // 로그인 요청
@@ -33,15 +35,16 @@ interface ApiService {
         @Field("name") name: String
     ): Call<LoginResponse>
 
+    // [수정] 맨 앞의 '/' 제거
     // 이름 수정
     @FormUrlEncoded
-    @POST("/update_user.php")
+    @POST("update_user.php")
     fun updateUserName(
         @Field("username") username: String,
         @Field("new_name") newName: String
     ): Call<LoginResponse>
 
-    // ✅ 위치 전송 추가
+    // ✅ 위치 전송 (정상)
     @FormUrlEncoded
     @POST("save_location.php")
     fun sendLocation(

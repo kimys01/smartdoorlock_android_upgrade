@@ -11,24 +11,15 @@ data class User(
     val password: String = "",
     val name: String = "",
     val authMethod: String = "BLE",
-
-    // [추가] 비밀번호 찾기용 휴대폰 번호
     val phoneNumber: String = "",
 
-    // [도어락 상태 및 로그] (개인용 로그 저장소)
     val doorlock: UserDoorlock = UserDoorlock(),
 
-    // [위치 로그 리스트]
-    // LocationLog 클래스는 별도 파일(LocationLog.kt)에 정의되어 있습니다.
-    val location_logs: HashMap<String, LocationLog> = HashMap(),
+    // [수정] LocationLog 클래스 대신 Any(HashMap) 사용
+    val location_logs: HashMap<String, Any> = HashMap(),
 
-    // [UWB 로그 리스트]
     val uwb_logs: HashMap<String, UwbLog> = HashMap(),
-
-    // [상세 설정]
     val detailSettings: DetailSettings = DetailSettings(),
-
-    // [앱 변경 로그 리스트]
     val app_logs: HashMap<String, AppLogItem> = HashMap(),
 
     val createdAt: Long = System.currentTimeMillis()
@@ -47,9 +38,6 @@ data class UwbLog(
     val timestamp: String = ""
 )
 
-// [삭제됨] LocationLog 중복 정의 제거
-// LocationLog는 별도 파일(LocationLog.kt)로 분리되었으므로 여기서 삭제해야 합니다.
-
 data class DetailSettings(
     val autoLockEnabled: Boolean = true,
     val autoLockTime: Int = 5,
@@ -58,7 +46,6 @@ data class DetailSettings(
 
 data class UserDoorlock(
     val status: DoorlockStatus = DoorlockStatus(),
-    // users/{id}/doorlock/logs 경로에 저장될 데이터
     val logs: HashMap<String, DoorlockLog> = HashMap()
 )
 
@@ -70,8 +57,8 @@ data class DoorlockStatus(
 )
 
 data class DoorlockLog(
-    val method: String = "", // 예: APP, UWB_AUTO
-    val state: String = "",  // 예: UNLOCK, LOCK
+    val method: String = "",
+    val state: String = "",
     val time: String = "",
-    val user: String = ""    // [추가] 누가 열었는지 기록
+    val user: String = ""
 )

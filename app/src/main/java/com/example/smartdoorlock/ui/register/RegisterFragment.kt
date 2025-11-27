@@ -38,27 +38,23 @@ class RegisterFragment : Fragment() {
             val id = binding.editTextId.text.toString().trim()
             val pw = binding.editTextPassword.text.toString().trim()
             val name = binding.editTextName.text.toString().trim()
-            val phone = binding.editTextPhone.text.toString().trim() // [추가]
+            val phone = binding.editTextPhone.text.toString().trim()
 
-            // 1. 빈 값 체크
             if (id.isEmpty() || pw.isEmpty() || name.isEmpty() || phone.isEmpty()) {
                 Toast.makeText(context, "모든 정보를 입력해주세요.", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
 
-            // 2. 아이디 유효성 검사 (영어, 숫자만 허용)
             if (!Pattern.matches("^[a-zA-Z0-9]*$", id)) {
                 Toast.makeText(context, "아이디는 영어와 숫자만 사용할 수 있습니다.", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
 
-            // 3. 비밀번호 길이 체크
             if (pw.length < 6) {
                 Toast.makeText(context, "비밀번호는 6자리 이상이어야 합니다.", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
 
-            // 4. 휴대폰 번호 체크 (숫자만)
             if (!Pattern.matches("^[0-9]*$", phone)) {
                 Toast.makeText(context, "휴대폰 번호는 숫자만 입력해주세요.", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
@@ -71,7 +67,6 @@ class RegisterFragment : Fragment() {
     private fun registerUser(username: String, password: String, name: String, phone: String) {
         binding.buttonRegister.isEnabled = false
 
-        // 아이디를 이메일 형식으로 변환 (Firebase Auth 요구사항)
         val fakeEmail = "$username@doorlock.com"
 
         auth.createUserWithEmailAndPassword(fakeEmail, password)
@@ -99,10 +94,21 @@ class RegisterFragment : Fragment() {
     private fun saveFullUserStructure(username: String, password: String, name: String, phone: String) {
         val currentTime = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
 
-        // 초기 로그 생성
+        // 초기 앱 로그
         val initialLogs = HashMap<String, AppLogItem>()
         val logKey = database.reference.push().key ?: "init_log"
         initialLogs[logKey] = AppLogItem("계정 생성: Initial Set", currentTime)
+
+        // [수정] 초기 위치 로그 (HashMap 사용) - 노드 생성용 더미 데이터
+        val initialLocationLogs = HashMap<String, Any>()
+        val locKey = database.reference.push().key ?: "init_loc"
+        val dummyLoc = hashMapOf(
+            "altitude" to 0.0,
+            "latitude" to 0.0,
+            "longitude" to 0.0,
+            "timestamp" to currentTime
+        )
+        initialLocationLogs[locKey] = dummyLoc
 
         val initialDoorlock = UserDoorlock(
             status = DoorlockStatus(true, "INIT", currentTime, "LOCK")
@@ -112,15 +118,16 @@ class RegisterFragment : Fragment() {
             username = username,
             password = password,
             name = name,
-            phoneNumber = phone, // [추가] 휴대폰 번호 저장
+            phoneNumber = phone,
             authMethod = "BLE",
             detailSettings = DetailSettings(true, 5, true),
             app_logs = initialLogs,
             doorlock = initialDoorlock,
             uwb_logs = HashMap(),
-            location_logs = HashMap()
+            location_logs = initialLocationLogs // HashMap 할당
         )
 
+        // Firebase에 저장
         database.getReference("users").child(username).setValue(newUser)
             .addOnSuccessListener {
                 Toast.makeText(context, "회원가입 완료!", Toast.LENGTH_SHORT).show()
