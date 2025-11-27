@@ -19,6 +19,7 @@ import androidx.navigation.ui.setupActionBarWithNavController
 import androidx.navigation.ui.setupWithNavController
 import com.example.smartdoorlock.databinding.ActivityMainBinding
 import com.example.smartdoorlock.service.LocationService
+import com.example.smartdoorlock.service.NotificationService
 import com.example.smartdoorlock.service.UwbServiceManager
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.database.*
@@ -36,24 +37,34 @@ class MainActivity : AppCompatActivity() {
     private var authRef: DatabaseReference? = null
 
     private val REQUEST_ALL_PERMISSIONS = 1001
+    private val REQUEST_BACKGROUND_LOCATION = 1002
 
-    private val REQUIRED_PERMISSIONS = mutableListOf(
-        Manifest.permission.ACCESS_FINE_LOCATION,
-        Manifest.permission.ACCESS_COARSE_LOCATION,
-        Manifest.permission.BLUETOOTH_ADMIN,
-        Manifest.permission.BLUETOOTH
-    ).apply {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            add(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+    // 필수 권한 목록 (백그라운드 위치 제외)
+    private fun getRequiredPermissions(): Array<String> {
+        val permissions = mutableListOf(
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.ACCESS_COARSE_LOCATION
+        )
+
+        // Android 12 미만: 구형 블루투스 권한
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            permissions.add(Manifest.permission.BLUETOOTH)
+            permissions.add(Manifest.permission.BLUETOOTH_ADMIN)
         }
+
+        // Android 12 이상: 신형 블루투스 권한
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            add(Manifest.permission.BLUETOOTH_SCAN)
-            add(Manifest.permission.BLUETOOTH_CONNECT)
+            permissions.add(Manifest.permission.BLUETOOTH_SCAN)
+            permissions.add(Manifest.permission.BLUETOOTH_CONNECT)
         }
+
+        // Android 13 이상: 알림 권한
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            add(Manifest.permission.POST_NOTIFICATIONS)
+            permissions.add(Manifest.permission.POST_NOTIFICATIONS)
         }
-    }.toTypedArray()
+
+        return permissions.toTypedArray()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -83,7 +94,7 @@ class MainActivity : AppCompatActivity() {
         setupActionBarWithNavController(navController, appBarConfiguration)
         binding.navView.setupWithNavController(navController)
 
-        // [수정] BottomNavigationView 아이템 선택 리스너 재정의 (탭 전환 시 스택 초기화)
+        // 탭 전환 시 스택 초기화
         binding.navView.setOnItemSelectedListener { item ->
             if (item.itemId != binding.navView.selectedItemId) {
                 val navOptions = NavOptions.Builder()
@@ -125,12 +136,11 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // [수정] 뒤로가기 처리 커스터마이징 (종료 확인 팝업 추가)
+        // 뒤로가기 처리
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 val currentDestination = navController.currentDestination?.id
 
-                // 1. 로그인/회원가입 화면에서는 바로 종료 (기존 로직 유지)
                 if (currentDestination == R.id.navigation_login ||
                     currentDestination == R.id.navigation_register ||
                     auth.currentUser == null) {
@@ -138,21 +148,16 @@ class MainActivity : AppCompatActivity() {
                     return
                 }
 
-                // 2. 그 외 화면 (메인 탭 등)
-                // popBackStack()이 false를 반환하면 더 이상 뒤로 갈 곳이 없다는 뜻 (=최상위 화면)
-                // 이때 바로 종료하지 않고 확인 팝업을 띄웁니다.
                 if (!navController.popBackStack()) {
                     showExitConfirmationDialog()
                 }
             }
         })
 
-        if (!hasAllPermissions()) {
-            ActivityCompat.requestPermissions(this, REQUIRED_PERMISSIONS, REQUEST_ALL_PERMISSIONS)
-        } else {
-            startLocationTrackingService()
-        }
+        // 권한 체크 및 서비스 시작
+        checkAndRequestPermissions()
 
+        // 로그인 상태 확인
         if (auth.currentUser == null) {
             val navOptions = NavOptions.Builder()
                 .setPopUpTo(R.id.mobile_navigation, true)
@@ -161,18 +166,19 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // [추가] 앱 종료 확인 다이얼로그
+    // 앱 종료 확인 다이얼로그
     private fun showExitConfirmationDialog() {
         AlertDialog.Builder(this)
             .setTitle("앱 종료")
             .setMessage("정말 앱을 종료하시겠습니까?")
             .setPositiveButton("종료") { _, _ ->
-                finish() // 진짜 종료
+                finish()
             }
-            .setNegativeButton("취소", null) // 팝업 닫기
+            .setNegativeButton("취소", null)
             .show()
     }
 
+    // 인증 방식 감시
     private fun observeAuthMethod() {
         if (authListener != null) return
         val uid = auth.currentUser?.uid ?: return
@@ -189,13 +195,64 @@ class MainActivity : AppCompatActivity() {
         authRef?.addValueEventListener(authListener!!)
     }
 
-    private fun hasAllPermissions(): Boolean {
-        return REQUIRED_PERMISSIONS.all {
-            ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
+    // 권한 체크 및 요청
+    private fun checkAndRequestPermissions() {
+        val missingPermissions = getRequiredPermissions().filter {
+            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+        }
+
+        if (missingPermissions.isEmpty()) {
+            // 모든 필수 권한이 있음 -> 서비스 시작
+            startAllServices()
+
+            // 백그라운드 위치 권한 체크 (선택적)
+            checkBackgroundLocationPermission()
+        } else {
+            // 부족한 권한 요청
+            ActivityCompat.requestPermissions(
+                this,
+                missingPermissions.toTypedArray(),
+                REQUEST_ALL_PERMISSIONS
+            )
         }
     }
 
-    private fun startLocationTrackingService() {
+    // 백그라운드 위치 권한 체크 (Android 10 이상)
+    private fun checkBackgroundLocationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            if (ContextCompat.checkSelfPermission(
+                    this,
+                    Manifest.permission.ACCESS_BACKGROUND_LOCATION
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                // 백그라운드 위치 권한이 없으면 안내 다이얼로그 표시
+                AlertDialog.Builder(this)
+                    .setTitle("백그라운드 위치 권한")
+                    .setMessage("도어락 자동 잠금/해제 기능을 사용하려면 백그라운드에서도 위치 접근이 필요합니다.\n\n다음 화면에서 '항상 허용'을 선택해주세요.")
+                    .setPositiveButton("설정") { _, _ ->
+                        ActivityCompat.requestPermissions(
+                            this,
+                            arrayOf(Manifest.permission.ACCESS_BACKGROUND_LOCATION),
+                            REQUEST_BACKGROUND_LOCATION
+                        )
+                    }
+                    .setNegativeButton("나중에", null)
+                    .show()
+            }
+        }
+    }
+
+    // 모든 서비스 시작
+    private fun startAllServices() {
+        // 1. 위치 추적 서비스 시작
+        startLocationService()
+
+        // 2. 알림 서비스 시작
+        startNotificationService()
+    }
+
+    // 위치 추적 서비스 시작
+    private fun startLocationService() {
         val serviceIntent = Intent(this, LocationService::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             startForegroundService(serviceIntent)
@@ -204,11 +261,55 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+    // 알림 서비스 시작
+    private fun startNotificationService() {
+        val serviceIntent = Intent(this, NotificationService::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(serviceIntent)
+        } else {
+            startService(serviceIntent)
+        }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == REQUEST_ALL_PERMISSIONS) {
-            if (grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }) {
-                startLocationTrackingService()
+
+        when (requestCode) {
+            REQUEST_ALL_PERMISSIONS -> {
+                // 거부된 권한 찾기
+                val deniedPermissions = permissions.filterIndexed { index, _ ->
+                    grantResults[index] != PackageManager.PERMISSION_GRANTED
+                }
+
+                if (deniedPermissions.isEmpty()) {
+                    // 모든 권한 허용됨 -> 서비스 시작
+                    startAllServices()
+
+                    // 백그라운드 위치 권한 체크
+                    checkBackgroundLocationPermission()
+                } else {
+                    // 일부 권한 거부됨
+                    AlertDialog.Builder(this)
+                        .setTitle("권한 필요")
+                        .setMessage("앱을 사용하려면 다음 권한이 필요합니다:\n\n${deniedPermissions.joinToString("\n")}\n\n권한을 허용해주세요.")
+                        .setPositiveButton("다시 시도") { _, _ ->
+                            checkAndRequestPermissions()
+                        }
+                        .setNegativeButton("나중에", null)
+                        .show()
+                }
+            }
+
+            REQUEST_BACKGROUND_LOCATION -> {
+                // 백그라운드 위치 권한 결과
+                if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                    // 백그라운드 권한 허용됨 -> 서비스 재시작
+                    startLocationService()
+                }
             }
         }
     }

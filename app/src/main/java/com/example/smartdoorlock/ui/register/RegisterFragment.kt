@@ -100,6 +100,7 @@ class RegisterFragment : Fragment() {
         initialLogs[logKey] = AppLogItem("계정 생성: Initial Set", currentTime)
 
         // [수정] 초기 위치 로그 (HashMap 사용) - 노드 생성용 더미 데이터
+        // 타입을 명시적으로 HashMap<String, Any>로 지정하여 User 객체 생성 시 타입 불일치 오류 방지
         val initialLocationLogs = HashMap<String, Any>()
         val locKey = database.reference.push().key ?: "init_loc"
         val dummyLoc = hashMapOf(
@@ -124,7 +125,7 @@ class RegisterFragment : Fragment() {
             app_logs = initialLogs,
             doorlock = initialDoorlock,
             uwb_logs = HashMap(),
-            location_logs = initialLocationLogs // HashMap 할당
+            location_logs = initialLocationLogs // 수정된 HashMap 할당
         )
 
         // Firebase에 저장
