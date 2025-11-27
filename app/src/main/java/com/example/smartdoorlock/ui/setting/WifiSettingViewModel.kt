@@ -24,8 +24,9 @@ import kotlin.collections.HashMap
 class WifiSettingViewModel(application: Application) : AndroidViewModel(application) {
 
     companion object {
-        var PROV_SERVICE_UUID: UUID = UUID.fromString("19b20000-e8f2-537e-4f6c-d104768a1214")
-        var WIFI_CTRL_UUID: UUID = UUID.fromString("19b20003-e8f2-537e-4f6c-d104768a1214")
+        // ESP32 코드와 일치해야 하는 UUID
+        var PROV_SERVICE_UUID: UUID = UUID.fromString("12345678-1234-1234-1234-1234567890ab")
+        var WIFI_CTRL_UUID: UUID = UUID.fromString("abcd1234-5678-90ab-cdef-1234567890ab")
         val CCCD_UUID: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
     }
 
@@ -146,8 +147,10 @@ class WifiSettingViewModel(application: Application) : AndroidViewModel(applicat
             }
     }
 
+    // [수정] ID를 포함하여 BLE 데이터 전송
     private fun sendBlePayload(ssid: String, pw: String, id: String) {
-        // 3. 도어락(ESP32)으로 정보 전송 (ID 포함)
+        // 포맷: "ssid:...,password:...,id:..."
+        // ESP32 코드의 handleNewWifiCredentials 함수가 이 포맷을 파싱합니다.
         val payload = "ssid:$ssid,password:$pw,id:$id"
 
         Log.d("BLE", "Sending data: $payload")
