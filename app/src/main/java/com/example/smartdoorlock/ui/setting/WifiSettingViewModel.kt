@@ -24,8 +24,9 @@ import kotlin.collections.HashMap
 class WifiSettingViewModel(application: Application) : AndroidViewModel(application) {
 
     companion object {
-        var PROV_SERVICE_UUID: UUID = UUID.fromString("12345678-1234-1234-1234-1234567890ab")
-        var WIFI_CTRL_UUID: UUID = UUID.fromString("abcd1234-5678-90ab-cdef-1234567890ab")
+        // [수정] var -> val로 변경하여 UUID가 변하지 않도록 고정
+        val PROV_SERVICE_UUID: UUID = UUID.fromString("12345678-1234-1234-1234-1234567890ab")
+        val WIFI_CTRL_UUID: UUID = UUID.fromString("abcd1234-5678-90ab-cdef-1234567890ab")
         val CCCD_UUID: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
     }
 
@@ -148,7 +149,7 @@ class WifiSettingViewModel(application: Application) : AndroidViewModel(applicat
 
         val result = writeCharacteristic(WIFI_CTRL_UUID, payload)
         if (!result) {
-            _statusText.postValue("전송 실패: UUID를 찾을 수 없습니다.")
+            _statusText.postValue("전송 실패: 도어락 서비스를 찾을 수 없습니다.")
         }
     }
 
@@ -156,7 +157,6 @@ class WifiSettingViewModel(application: Application) : AndroidViewModel(applicat
         sendWifiSettingsWithLocation(ssid, pass, 0.0, 0.0, 0.0)
     }
 
-    // [핵심 수정] command 경로 초기화 추가
     private fun registerSharedDoorlock(mac: String, doorlockId: String, ssid: String, pass: String, lat: Double, lon: Double, alt: Double) {
         val userId = getSavedUserId() ?: return
         val currentTime = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
@@ -181,18 +181,16 @@ class WifiSettingViewModel(application: Application) : AndroidViewModel(applicat
             lastUpdated = currentTime
         )
 
-        // [핵심 1] 도어락 기본 정보 저장
+        // 도어락 기본 정보 저장
         doorlocksRef.setValue(newLock).addOnSuccessListener {
             Log.d("DB_SHARE", "도어락 기본 정보 저장 완료")
 
-            // [핵심 2] command 경로 초기화 (ESP32가 읽을 경로)
+            // command 경로 초기화
             doorlocksRef.child("command").setValue("INIT").addOnSuccessListener {
                 Log.d("DB_SHARE", "command 경로 초기화 완료: INIT")
-            }.addOnFailureListener { e ->
-                Log.e("DB_SHARE", "command 경로 초기화 실패", e)
             }
 
-            // [핵심 3] status 경로 초기화
+            // status 경로 초기화
             val initialStatus = mapOf(
                 "state" to "LOCK",
                 "last_method" to "INIT",
@@ -202,8 +200,6 @@ class WifiSettingViewModel(application: Application) : AndroidViewModel(applicat
 
             doorlocksRef.child("status").setValue(initialStatus).addOnSuccessListener {
                 Log.d("DB_SHARE", "status 경로 초기화 완료")
-            }.addOnFailureListener { e ->
-                Log.e("DB_SHARE", "status 경로 초기화 실패", e)
             }
 
         }.addOnFailureListener { e ->
@@ -237,37 +233,43 @@ class WifiSettingViewModel(application: Application) : AndroidViewModel(applicat
                 closeGatt()
             }
         }
+
         override fun onMtuChanged(gatt: BluetoothGatt?, mtu: Int, status: Int) {
             gatt?.discoverServices()
         }
+
+        // [핵심 수정] 서비스를 정확히 찾도록 로직 변경
         override fun onServicesDiscovered(gatt: BluetoothGatt?, status: Int) {
             if (status == BluetoothGatt.GATT_SUCCESS) {
-                var foundWritableUuid = false
-                gatt?.services?.forEach { service ->
-                    service.characteristics.forEach { characteristic ->
-                        val props = characteristic.properties
-                        if ((props and BluetoothGattCharacteristic.PROPERTY_WRITE) > 0 ||
-                            (props and BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE) > 0) {
-                            PROV_SERVICE_UUID = service.uuid
-                            WIFI_CTRL_UUID = characteristic.uuid
-                            foundWritableUuid = true
-                            return@forEach
-                        }
-                    }
-                    if (foundWritableUuid) return@forEach
+                // 기존의 루프 방식은 다른 서비스를 덮어쓰는 문제가 있었습니다.
+                // 지정된 UUID(PROV_SERVICE_UUID)로 서비스를 직접 가져옵니다.
+                val service = gatt?.getService(PROV_SERVICE_UUID)
+                val characteristic = service?.getCharacteristic(WIFI_CTRL_UUID)
+
+                if (service != null && characteristic != null) {
+                    Log.d("BLE", "Target Service & Characteristic Found!")
+                    subscribeNotifications()
+                } else {
+                    Log.e("BLE", "Target Service NOT found. UUID Mismatch?")
+                    _statusText.postValue("도어락 서비스(UUID)를 찾을 수 없습니다.")
+                    // disconnect() // 필요시 연결 해제
                 }
-                subscribeNotifications()
+            } else {
+                Log.w("BLE", "Service discovery failed with status: $status")
             }
         }
+
         override fun onCharacteristicWrite(gatt: BluetoothGatt?, c: BluetoothGattCharacteristic?, s: Int) {
             if (s == BluetoothGatt.GATT_SUCCESS) {
-                // 쓰기 성공
+                Log.d("BLE", "Write successful")
             } else {
                 _statusText.postValue("전송 실패 (Error: $s)")
             }
         }
+
         override fun onCharacteristicChanged(gatt: BluetoothGatt, c: BluetoothGattCharacteristic, value: ByteArray) {
             val response = String(value, Charsets.UTF_8)
+            Log.d("BLE", "Received: $response")
             if (response == "SUCCESS") {
                 _statusText.postValue("성공: 도어락 설정이 완료되었습니다!")
                 closeGatt()
@@ -277,6 +279,7 @@ class WifiSettingViewModel(application: Application) : AndroidViewModel(applicat
                 _statusText.postValue("상태: $response")
             }
         }
+
         @Deprecated("Deprecated in Java")
         override fun onCharacteristicChanged(gatt: BluetoothGatt?, c: BluetoothGattCharacteristic?) {
             c?.let { onCharacteristicChanged(gatt!!, it, it.value) }
