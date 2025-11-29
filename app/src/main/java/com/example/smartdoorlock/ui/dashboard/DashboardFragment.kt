@@ -131,7 +131,7 @@ class DashboardFragment : Fragment() {
             }
 
         // 3. (옵션) UI 미리 업데이트 (낙관적 업데이트) - 실제 하드웨어 응답은 리스너가 처리
-        // updateDashboardUI(if(newState=="UNLOCK") "문이 열려 있습니다" else "문이 잠겨 있습니다", true, newState=="UNLOCK")
+        updateDashboardUI(if(newState=="UNLOCK") "문이 열려 있습니다" else "문이 잠겨 있습니다", true, newState=="UNLOCK")
     }
 
     override fun onDestroyView() {
