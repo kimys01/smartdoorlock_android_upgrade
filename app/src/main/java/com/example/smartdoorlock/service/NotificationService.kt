@@ -55,6 +55,7 @@ class NotificationService : Service() {
         return START_STICKY
     }
 
+    // [수정] 랜덤 도어락 ID 방식으로 변경
     private fun startMonitoring() {
         val prefs = getSharedPreferences("login_prefs", Context.MODE_PRIVATE)
         val username = prefs.getString("saved_id", null)
@@ -64,32 +65,35 @@ class NotificationService : Service() {
             return
         }
 
-        // '내 도어락 목록' 가져오기 (users/{username}/my_doorlocks)
+        // [수정] 내 도어락 목록 가져오기 (랜덤 ID 방식)
         val myDoorlocksRef = database.getReference("users").child(username).child("my_doorlocks")
 
         // 도어락이 추가될 때마다 해당 도어락 감시 시작
         myDoorlocksRef.addChildEventListener(object : ChildEventListener {
             override fun onChildAdded(snapshot: DataSnapshot, previousChildName: String?) {
-                val macAddress = snapshot.key ?: return
-                monitorDoorlockLogs(macAddress)
+                val doorlockId = snapshot.key ?: return // 랜덤 ID (예: "abc123xyz")
+                Log.d("NotiService", "도어락 감시 시작: $doorlockId")
+                monitorDoorlockLogs(doorlockId)
             }
             override fun onChildRemoved(snapshot: DataSnapshot) {
-                val macAddress = snapshot.key ?: return
-                removeMonitor(macAddress)
+                val doorlockId = snapshot.key ?: return
+                removeMonitor(doorlockId)
             }
             override fun onChildChanged(snapshot: DataSnapshot, previousChildName: String?) {}
             override fun onChildMoved(snapshot: DataSnapshot, previousChildName: String?) {}
-            override fun onCancelled(error: DatabaseError) {}
+            override fun onCancelled(error: DatabaseError) {
+                Log.e("NotiService", "감시 시작 실패: ${error.message}")
+            }
         })
     }
 
-    // [핵심] 특정 도어락의 로그 감시 (공용 DB: doorlocks/{mac}/logs)
-    private fun monitorDoorlockLogs(mac: String) {
-        if (listeners.containsKey(mac)) return // 이미 감시 중이면 패스
+    // [핵심] 특정 도어락의 로그 감시 (공용 DB: doorlocks/{doorlockId}/logs)
+    private fun monitorDoorlockLogs(doorlockId: String) {
+        if (listeners.containsKey(doorlockId)) return // 이미 감시 중이면 패스
 
-        Log.d("NotiService", "감시 시작: $mac")
+        Log.d("NotiService", "로그 감시 시작: doorlocks/$doorlockId/logs")
 
-        val logsRef = database.getReference("doorlocks").child(mac).child("logs")
+        val logsRef = database.getReference("doorlocks").child(doorlockId).child("logs")
 
         val listener = object : ChildEventListener {
             override fun onChildAdded(snapshot: DataSnapshot, previousChildName: String?) {
@@ -97,6 +101,9 @@ class NotificationService : Service() {
                 val method = snapshot.child("method").getValue(String::class.java) ?: "알 수 없음"
                 val state = snapshot.child("state").getValue(String::class.java) ?: ""
                 val timeStr = snapshot.child("time").getValue(String::class.java) ?: ""
+                val user = snapshot.child("user").getValue(String::class.java) ?: "알 수 없음"
+
+                Log.d("NotiService", "로그 감지: $state by $method at $timeStr")
 
                 // 서비스 시작 이후에 발생한 로그인지 확인 (과거 로그 알림 방지)
                 if (isNewLog(timeStr)) {
@@ -106,29 +113,32 @@ class NotificationService : Service() {
                         else -> "상태 변경: $state"
                     }
                     showNotification("도어락 알림", message)
+                    Log.d("NotiService", "알림 표시: $message")
                 }
             }
 
             override fun onChildChanged(snapshot: DataSnapshot, previousChildName: String?) {}
             override fun onChildRemoved(snapshot: DataSnapshot) {}
             override fun onChildMoved(snapshot: DataSnapshot, previousChildName: String?) {}
-            override fun onCancelled(error: DatabaseError) {}
+            override fun onCancelled(error: DatabaseError) {
+                Log.e("NotiService", "로그 감시 실패: ${error.message}")
+            }
         }
 
         // 리스너 등록 (limitToLast(1)로 최신 것부터 감시)
         logsRef.limitToLast(1).addChildEventListener(listener)
 
         // 관리용 맵에 저장 (나중에 해제하기 위함)
-        listeners[mac] = listener
-        dbRefs[mac] = logsRef
+        listeners[doorlockId] = listener
+        dbRefs[doorlockId] = logsRef
     }
 
-    private fun removeMonitor(mac: String) {
-        if (listeners.containsKey(mac)) {
-            dbRefs[mac]?.removeEventListener(listeners[mac]!!)
-            listeners.remove(mac)
-            dbRefs.remove(mac)
-            Log.d("NotiService", "감시 종료: $mac")
+    private fun removeMonitor(doorlockId: String) {
+        if (listeners.containsKey(doorlockId)) {
+            dbRefs[doorlockId]?.removeEventListener(listeners[doorlockId]!!)
+            listeners.remove(doorlockId)
+            dbRefs.remove(doorlockId)
+            Log.d("NotiService", "감시 종료: $doorlockId")
         }
     }
 
@@ -187,10 +197,11 @@ class NotificationService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         // 모든 리스너 정리
-        for ((mac, listener) in listeners) {
-            dbRefs[mac]?.removeEventListener(listener)
+        for ((doorlockId, listener) in listeners) {
+            dbRefs[doorlockId]?.removeEventListener(listener)
         }
         listeners.clear()
         dbRefs.clear()
+        Log.d("NotiService", "서비스 종료")
     }
 }
